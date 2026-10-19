@@ -120,6 +120,8 @@ export async function fetchBoard() {
     catch { rows = null; }
   }
   if (!rows) rows = Object.entries(readBoard()).filter(([id]) => !cloudEnabled || id === s?.userId).map(([user_id, e]) => ({ user_id, ...e }));
+  // eigener Eintrag immer dabei, auch bevor er zum ersten Mal veröffentlicht wurde
+  if (s && !rows.some((r) => r.user_id === s.userId)) rows.push({ user_id: s.userId, name: s.name });
   return rows.map((r) => ({
     id: r.user_id, name: r.name, me: r.user_id === s?.userId,
     total: r.user_id === s?.userId ? p.total : r.total,
