@@ -1,8 +1,9 @@
 // Bereich Training: Trainingstage, Übungen, laufendes Training, Zusammenfassung, Verlauf.
 import { state, save, exById, dayById, exerciseHistory, bestE10, lastSetsFor, setVolume, MUSCLES, EQUIPMENT } from './store.js';
-import { uid, esc, fmt, fmtMax, signed, parseNum, e10rm, roundTo, fmtClock, fmtDuration, fmtDay, dayKey, sum, MONTHS } from './utils.js';
+import { uid, esc, fmt, fmtMax, signed, parseNum, e10rm, roundTo, fmtClock, fmtDuration, fmtDay, dayKey, sum, MONTHS, todayKey, addDays, parseKey, daysBetween } from './utils.js';
 import { icon, onAct, onInput, onChange, openSheet, closeSheet, confirmDialog, menuDialog, toast, beep, sheetOpen, topSheet } from './ui.js';
 import { lineChart } from './charts.js';
+import { plannedFor } from './success.js';
 
 let sub = 'plan';
 let exSearch = '';
@@ -32,14 +33,43 @@ export function renderTraining() {
     ${sub === 'plan' ? renderPlan() : sub === 'exercises' ? renderExercises() : renderHistory()}`;
 }
 
+const WD2 = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+const slotName = (id) => (id == null ? 'Pause' : dayById(id)?.name || '?');
+
+function scheduleCard() {
+  const sc = state.settings.schedule;
+  const today = todayKey();
+  if (!sc.slots.length) {
+    return `<div class="card">
+      <div class="card-head"><h3>Trainingsrhythmus</h3><span class="chip">nicht festgelegt</span></div>
+      <div class="small muted">Leg fest, wie sich deine Trainingstage wiederholen, z. B. Torso → Limbs → Pause. Danach richten sich deine Erfolgskästchen: Ein ausgelassenes Training zählt als verpasst, Pausentage zählen nicht.</div>
+      <button class="btn primary" data-act="sched-edit">${icon('edit')}Rhythmus festlegen</button>
+    </div>`;
+  }
+  const strip = Array.from({ length: 7 }, (_, i) => {
+    const k = addDays(today, i);
+    const p = plannedFor(k);
+    const name = p == null ? '–' : p === 'rest' ? 'Pause' : p.name;
+    return `<div class="sched-day ${i === 0 ? 'now' : ''} ${p === 'rest' || p == null ? 'rest' : ''}"><span class="wd">${i === 0 ? 'Heute' : WD2[parseKey(k).getDay()]}</span><span class="nm">${esc(name)}</span></div>`;
+  }).join('');
+  const len = sc.slots.length;
+  return `<div class="card">
+    <div class="card-head"><div><h3>Trainingsrhythmus</h3><div class="small muted">${len}-Tage-Zyklus · ${sc.slots.filter((x) => x != null).length}× Training</div></div>
+      <button class="icon-btn sm" data-act="sched-edit" aria-label="Rhythmus bearbeiten">${icon('edit')}</button></div>
+    <div class="sched-strip">${strip}</div>
+  </div>`;
+}
+
 function renderPlan() {
   const days = state.workoutDays;
+  const todayPlan = plannedFor(todayKey());
   return `
+    ${scheduleCard()}
     ${days.map((d) => {
       const last = [...state.workouts].reverse().find((w) => w.dayId === d.id);
-      return `<div class="card day-card">
+      return `<div class="card day-card" ${todayPlan && todayPlan !== 'rest' && todayPlan.id === d.id ? 'style="border-color:var(--accent)"' : ''}>
         <div class="card-head">
-          <div class="grow"><h3>${esc(d.name)}</h3>
+          <div class="grow"><h3>${esc(d.name)} ${todayPlan && todayPlan !== 'rest' && todayPlan.id === d.id ? '<span class="chip good" style="vertical-align:2px;margin-left:4px">heute dran</span>' : ''}</h3>
             <div class="small muted">${d.items.length} Übungen · ${sum(d.items, (i) => i.sets)} Sätze${last ? ` · zuletzt ${fmtDay(dayKey(new Date(last.startedAt)))}` : ''}</div></div>
           <button class="icon-btn sm" data-act="day-edit" data-id="${d.id}" aria-label="Bearbeiten">${icon('edit')}</button>
         </div>
@@ -169,6 +199,7 @@ onAct({
     const d = dayById(el.dataset.id);
     if (!(await confirmDialog({ title: `„${d.name}“ löschen?`, text: 'Bereits gespeicherte Trainings bleiben erhalten.', ok: 'Löschen', danger: true }))) return;
     state.workoutDays = state.workoutDays.filter((x) => x.id !== d.id);
+    state.settings.schedule.slots = state.settings.schedule.slots.map((x) => (x === d.id ? null : x));
     closeSheet();
     save();
   },
@@ -195,6 +226,84 @@ onChange({
   'day-name': (el) => { dayById(el.dataset.id).name = el.value.trim() || 'Trainingstag'; save(); },
   'day-item-reps': (el) => { dayById(el.dataset.id).items[+el.dataset.i].reps = el.value.trim(); save({ silent: true }); },
   'day-item-rest': (el) => { dayById(el.dataset.id).items[+el.dataset.i].rest = el.value === '' ? null : +el.value; save({ silent: true }); },
+});
+
+// =====================================================================
+// Trainingsrhythmus bearbeiten
+// =====================================================================
+function openScheduleEditor() {
+  openSheet({
+    id: 'sched',
+    render: () => {
+      const sc = state.settings.schedule;
+      const days = state.workoutDays;
+      const preview = Array.from({ length: 14 }, (_, i) => {
+        const k = addDays(todayKey(), i);
+        const p = plannedFor(k);
+        return `<div class="sched-day ${i === 0 ? 'now' : ''} ${p === 'rest' || p == null ? 'rest' : ''}"><span class="wd">${i === 0 ? 'Heute' : `${WD2[parseKey(k).getDay()]} ${parseKey(k).getDate()}.`}</span><span class="nm">${p == null ? '–' : p === 'rest' ? 'Pause' : esc(p.name)}</span></div>`;
+      }).join('');
+      const todayIdx = sc.slots.length && sc.start <= todayKey() ? daysBetween(sc.start, todayKey()) % sc.slots.length : -1;
+      return {
+        title: 'Trainingsrhythmus',
+        body: `
+          <div class="small muted">Die Abfolge wiederholt sich endlos. Beispiel Zweiersplit: Torso, Limbs, Pause. Für feste Wochentage nimm 7 Tage.</div>
+          ${days.length ? `<div class="row wrap" style="gap:6px">
+            <button class="btn sm" data-act="sched-preset" data-k="all">Alle Tage + Pause</button>
+            <button class="btn sm" data-act="sched-preset" data-k="all2">Alle Tage + 2 Pausen</button>
+            <button class="btn sm" data-act="sched-preset" data-k="clear">Leeren</button>
+          </div>` : '<div class="card flat"><div class="empty small">Lege zuerst Trainingstage an.</div></div>'}
+          <h2 class="sec">Abfolge</h2>
+          ${sc.slots.length ? `<div class="card" style="padding:4px 14px"><div class="list">${sc.slots.map((id, i) => `
+            <div class="li">
+              <span class="mid-num" style="width:28px;font-size:17px;${i === todayIdx ? 'color:var(--accent)' : 'color:var(--muted)'}">${i + 1}</span>
+              <select class="input grow" data-ch="sched-slot" data-i="${i}" aria-label="Tag ${i + 1}" style="min-height:40px">
+                <option value="" ${id == null ? 'selected' : ''}>Pause</option>
+                ${days.map((d) => `<option value="${d.id}" ${id === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+              </select>
+              <button class="icon-btn sm plain" data-act="sched-move" data-i="${i}" ${i ? '' : 'disabled style="opacity:.3"'} aria-label="Nach oben">${icon('up')}</button>
+              <button class="icon-btn sm plain" data-act="sched-del" data-i="${i}" aria-label="Entfernen">${icon('x')}</button>
+            </div>`).join('')}</div></div>` : ''}
+          <div class="grid2">
+            <button class="btn" data-act="sched-add" data-k="day" ${days.length ? '' : 'disabled style="opacity:.4"'}>${icon('plus')}Trainingstag</button>
+            <button class="btn" data-act="sched-add" data-k="rest">${icon('plus')}Pause</button>
+          </div>
+          <label class="field"><span>Tag 1 der Abfolge war am</span><input class="input" type="date" value="${sc.start}" data-ch="sched-start"></label>
+          ${sc.slots.length ? `<button class="btn sm" data-act="sched-today" style="align-self:flex-start">Heute ist Tag …</button>` : ''}
+          ${sc.slots.length ? `<h2 class="sec">Die nächsten 14 Tage</h2><div class="sched-strip wrap">${preview}</div>` : ''}
+          <p class="tiny faint" style="margin:0">Änderungen gelten auch rückwirkend für die Auswertung der Erfolgskästchen.</p>`,
+      };
+    },
+  });
+}
+onAct({
+  'sched-edit': () => openScheduleEditor(),
+  'sched-preset': (el) => {
+    const ids = state.workoutDays.map((d) => d.id);
+    const sc = state.settings.schedule;
+    if (el.dataset.k === 'all') sc.slots = [...ids, null];
+    if (el.dataset.k === 'all2') sc.slots = ids.length === 2 ? [ids[0], ids[1], null, ids[0], ids[1], null, null] : [...ids, null, null];
+    if (el.dataset.k === 'clear') sc.slots = [];
+    if (el.dataset.k !== 'clear' && !sc.start) sc.start = todayKey();
+    save();
+  },
+  'sched-add': (el) => {
+    const sc = state.settings.schedule;
+    sc.slots.push(el.dataset.k === 'rest' ? null : (state.workoutDays[sc.slots.filter((x) => x != null).length % state.workoutDays.length]?.id ?? null));
+    save();
+  },
+  'sched-move': (el) => { const sl = state.settings.schedule.slots, i = +el.dataset.i; [sl[i - 1], sl[i]] = [sl[i], sl[i - 1]]; save(); },
+  'sched-del': (el) => { state.settings.schedule.slots.splice(+el.dataset.i, 1); save(); },
+  'sched-today': async (el) => {
+    const sc = state.settings.schedule;
+    const v = await menuDialog({ title: 'Welcher Tag der Abfolge ist heute?', options: sc.slots.map((id, i) => ({ label: `Tag ${i + 1}: ${slotName(id)}`, value: String(i) })) });
+    if (v == null) return;
+    sc.start = addDays(todayKey(), -Number(v));
+    save();
+  },
+});
+onChange({
+  'sched-slot': (el) => { state.settings.schedule.slots[+el.dataset.i] = el.value || null; save(); },
+  'sched-start': (el) => { if (el.value) { state.settings.schedule.start = el.value; save(); } },
 });
 
 // =====================================================================

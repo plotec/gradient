@@ -3,6 +3,7 @@ import { state, save, dayKcal, latestWeight, weightTrend, workoutDayKeys, comput
 import { esc, fmt, fmtMax, signed, todayKey, addDays, parseKey, dayKey, MONTHS, fmtShort, sum } from './utils.js';
 import { icon, onAct, onChange, openSheet, closeSheet, topSheet, confirmDialog, toast } from './ui.js';
 import { lineChart, barChart } from './charts.js';
+import { dayStatus, rate, yearStatuses, supplementHabits, otherHabits } from './success.js';
 
 let year = new Date().getFullYear();
 let period = 'week';
@@ -177,17 +178,7 @@ export function renderDashboard() {
 
     ${tdeeCard()}
 
-    <div class="card">
-      <div class="card-head">
-        <button class="icon-btn sm" data-act="dash-year" data-d="-1" aria-label="Vorjahr">${icon('left')}</button>
-        <h3 class="num">Jahresübersicht ${year}</h3>
-        <button class="icon-btn sm" data-act="dash-year" data-d="1" ${year >= now.getFullYear() ? 'disabled style="opacity:.3"' : ''} aria-label="Nächstes Jahr">${icon('right')}</button>
-      </div>
-      ${heatmap('Training', 'var(--accent)', (k) => wdays.has(k))}
-      ${heatmap('Gewogen', 'var(--body)', (k) => state.weights[k] != null)}
-      ${heatmap('Ernährung geloggt', 'var(--amber)', (k) => dayKcal(k) > 0)}
-      ${state.habits.map((h) => heatmap(h.name, h.color, (k) => (state.habitLog[k] || []).includes(h.id))).join('')}
-    </div>`;
+    ${successCard()}`;
 }
 
 function flameRing(frac) {
@@ -245,39 +236,75 @@ function tdeeCard() {
   </div>`;
 }
 
-// ---------- Jahres-Heatmap (365 Kästchen) ----------
-function heatmap(title, color, on) {
-  const jan1 = `${year}-01-01`;
-  const dec31 = `${year}-12-31`;
+// ---------- Erfolgskästchen (365 Kästchen je Kategorie) ----------
+let showDetails = (() => { try { return localStorage.getItem('formkurve-details') === '1'; } catch { return false; } })();
+
+function successCard() {
+  const st = yearStatuses(year);
   const today = todayKey();
-  const lead = (parseKey(jan1).getDay() + 6) % 7; // Montag = 0
+  const last30 = Array.from({ length: 30 }, (_, i) => dayStatus(addDays(today, -i)));
+  const cats = [
+    { title: 'Training', color: 'var(--accent)', pick: (s) => s.training, sub: state.settings.schedule.slots.length ? 'nach deinem Rhythmus' : 'kein Rhythmus festgelegt' },
+    { title: 'Ernährung im Zielbereich', color: 'var(--amber)', pick: (s) => s.nutrition, sub: `± ${state.settings.nutritionTolerance} %` },
+    { title: 'Gewogen', color: 'var(--body)', pick: (s) => s.weight },
+    ...(supplementHabits().length ? [{ title: 'Supplements', color: 'var(--habit)', pick: (s) => s.supplements, sub: supplementHabits().map((h) => h.name).join(', ') }] : []),
+    ...otherHabits().map((h, i) => ({ title: h.name, color: h.color, pick: (s) => s.habits.find((x) => x.id === h.id) || { due: false, done: false } })),
+  ];
+  const overallPick = (s) => s.overall;
+  const yr = rate(st.map(overallPick));
+  const r30 = rate(last30.map(overallPick));
+  return `<div class="card">
+    <div class="card-head">
+      <button class="icon-btn sm" data-act="dash-year" data-d="-1" aria-label="Vorjahr">${icon('left')}</button>
+      <h3 class="num">Erfolgskästchen ${year}</h3>
+      <button class="icon-btn sm" data-act="dash-year" data-d="1" ${year >= new Date().getFullYear() ? 'disabled style="opacity:.3"' : ''} aria-label="Nächstes Jahr">${icon('right')}</button>
+    </div>
+    <div class="row between" style="align-items:flex-end">
+      <div class="metric"><span class="lbl">Insgesamt</span><span class="v">${yr == null ? '–' : yr}<small>%</small></span></div>
+      <div class="delta"><span class="chip ${r30 >= 80 ? 'good' : r30 == null ? '' : 'food'}">${r30 == null ? '–' : `${r30} %`}</span><span class="vs">letzte 30 Tage</span></div>
+    </div>
+    ${heatmap(st, overallPick, 'var(--accent)', { levels: true })}
+    <div class="legend"><span><i class="lg" style="background:var(--accent)"></i>alles geschafft</span><span><i class="lg" style="background:color-mix(in srgb, var(--accent) 35%, var(--cell-empty))"></i>teilweise</span><span><i class="lg" style="background:var(--cell-empty)"></i>verpasst</span></div>
+    <button class="btn block" data-act="dash-details" aria-expanded="${showDetails}">${showDetails ? 'Details ausblenden' : `Details: ${cats.length} Bereiche`}${icon(showDetails ? 'up' : 'down')}</button>
+    ${showDetails ? cats.map((c) => {
+      const p = rate(st.map(c.pick));
+      const p30 = rate(last30.map(c.pick));
+      return `<div class="heat">
+        <div class="hh"><span class="t"><i style="background:${c.color}"></i>${esc(c.title)}</span><span class="pct">${p == null ? '–' : `${p} %`}</span></div>
+        <div class="hs"><span>${c.sub ? esc(c.sub) : ''}</span><span>30 T: ${p30 == null ? '–' : `${p30} %`}</span></div>
+        ${heatmap(st, c.pick, c.color)}
+      </div>`;
+    }).join('') : ''}
+  </div>`;
+}
+
+function heatmap(statuses, pick, color, { levels = false } = {}) {
+  const today = todayKey();
+  const lead = (parseKey(`${year}-01-01`).getDay() + 6) % 7; // Montag = 0
   const cells = [];
   for (let i = 0; i < lead; i++) cells.push('<i class="out"></i>');
-  let k = jan1, count = 0, elapsed = 0;
   const monthCols = [];
-  let idx = lead;
-  while (k <= dec31) {
-    const d = parseKey(k);
-    if (d.getDate() === 1) monthCols.push({ m: d.getMonth(), col: Math.floor(idx / 7) });
-    const future = k > today;
-    const hit = !future && on(k);
-    if (hit) count++;
-    if (!future) elapsed++;
-    cells.push(`<i class="${hit ? 'on' : ''} ${k === today ? 'today' : ''}" ${future ? 'style="opacity:.35"' : ''} title="${k}"></i>`);
-    k = addDays(k, 1);
-    idx++;
-  }
-  const cols = Math.ceil(idx / 7);
+  statuses.forEach((s, i) => {
+    const d = parseKey(s.key);
+    if (d.getDate() === 1) monthCols.push({ m: d.getMonth(), col: Math.floor((i + lead) / 7) });
+    const v = pick(s);
+    let cls = '', style = '';
+    if (s.key > today) cls = 'future';
+    else if (!s.tracked) cls = 'pre';
+    else if (v.done) cls = 'on';
+    else if (levels && v.frac > 0) { cls = 'part'; style = `--p:${Math.round(15 + v.frac * 45)}%`; }
+    else if (v.rest && !v.due) cls = 'rest';
+    cells.push(`<i class="${cls}${s.key === today ? ' today' : ''}" ${style ? `style="${style}"` : ''}></i>`);
+  });
+  const cols = Math.ceil((statuses.length + lead) / 7);
   const months = Array.from({ length: cols }, (_, c) => { const m = monthCols.find((x) => x.col === c); return `<span>${m && m.m % 2 === 0 ? MONTHS[m.m] : ''}</span>`; }).join('');
-  return `<div class="heat">
-    <div class="hh"><span class="t"><i style="background:${color}"></i>${esc(title)}</span><span class="c">${count} / ${elapsed} Tage${elapsed ? ` · ${Math.round((count / elapsed) * 100)} %` : ''}</span></div>
-    <div class="heat-months" style="grid-template-columns:repeat(${cols},1fr)">${months}</div>
-    <div class="heat-grid" style="--hc:${color};grid-template-columns:repeat(${cols},1fr)">${cells.join('')}</div>
-  </div>`;
+  return `<div class="heat-months" style="grid-template-columns:repeat(${cols},1fr)">${months}</div>
+    <div class="heat-grid" style="--hc:${color};grid-template-columns:repeat(${cols},1fr)">${cells.join('')}</div>`;
 }
 
 const rerender = () => window.dispatchEvent(new Event('rerender'));
 onAct({
+  'dash-details': () => { showDetails = !showDetails; try { localStorage.setItem('formkurve-details', showDetails ? '1' : '0'); } catch {} rerender(); },
   'dash-period': (el) => { period = el.dataset.k; rerender(); },
   'dash-year': (el) => { year = Math.min(new Date().getFullYear(), year + +el.dataset.d); rerender(); },
   'tdee-win': (el) => { state.settings.tdeeWindow = +el.dataset.d; save(); },

@@ -74,6 +74,12 @@ function defaults() {
       weeklyRate: -0.5,
       tdeeWindow: 28,
       theme: 'auto',
+      // Erfolgskästchen
+      trackingStart: todayKey(),
+      nutritionTolerance: 15,
+      nutritionChecks: { kcal: true, protein: true, carbs: true, fat: true },
+      // Trainingsrhythmus: wiederholte Abfolge aus Trainingstag-IDs und null (= Pause) ab Startdatum
+      schedule: { start: todayKey(), slots: [] },
     },
     exercises,
     workoutDays: [
@@ -92,10 +98,10 @@ function defaults() {
     diary: {},
     weights: {},
     habits: [
-      { id: 'h-kreatin', name: 'Kreatin', color: '#c3a6ff' },
-      { id: 'h-vitd', name: 'Vitamin D3/K2', color: '#f2e3a0' },
-      { id: 'h-omega', name: 'Omega 3', color: '#8ec5ff' },
-      { id: 'h-water', name: '3 Liter Wasser', color: '#7fd6b4' },
+      { id: 'h-kreatin', name: 'Kreatin', color: '#c3a6ff', supplement: true },
+      { id: 'h-vitd', name: 'Vitamin D3/K2', color: '#f2e3a0', supplement: true },
+      { id: 'h-omega', name: 'Omega 3', color: '#8ec5ff', supplement: true },
+      { id: 'h-water', name: '3 Liter Wasser', color: '#7fd6b4', supplement: false },
     ],
     habitLog: {},
   };
@@ -112,7 +118,21 @@ function load() {
 function migrate(s) {
   const d = defaults();
   for (const k of Object.keys(d)) if (s[k] === undefined) s[k] = d[k];
-  s.settings = { ...d.settings, ...s.settings, goals: { ...d.settings.goals, ...(s.settings?.goals || {}) } };
+  const hadStart = s.settings?.trackingStart;
+  s.settings = {
+    ...d.settings, ...s.settings,
+    goals: { ...d.settings.goals, ...(s.settings?.goals || {}) },
+    nutritionChecks: { ...d.settings.nutritionChecks, ...(s.settings?.nutritionChecks || {}) },
+    schedule: { ...d.settings.schedule, ...(s.settings?.schedule || {}) },
+  };
+  // Beginn der Auswertung = frühester Eintrag (für ältere Datenstände)
+  if (!hadStart) {
+    const keys = [...Object.keys(s.diary || {}), ...Object.keys(s.weights || {}), ...Object.keys(s.habitLog || {}),
+      ...(s.workouts || []).map((w) => { const x = new Date(w.startedAt); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; })].sort();
+    if (keys[0]) s.settings.trackingStart = keys[0];
+  }
+  const SUPP = ['h-kreatin', 'h-vitd', 'h-omega'];
+  for (const h of s.habits) if (h.supplement === undefined) h.supplement = SUPP.includes(h.id) || /kreatin|creatin|vitamin|omega|magnesium|zink|supplement|protein|ashwa|eisen/i.test(h.name);
   return s;
 }
 
@@ -301,6 +321,9 @@ export function demoData() {
   const days = s.workoutDays;
   let dayIdx = 0;
   const base = {}; // Arbeitsgewicht je Übung
+  s.settings.trackingStart = addDays(today, -N);
+  s.settings.schedule = { start: addDays(today, -N), slots: [days[0].id, days[1].id, days[2].id, null] };
+  s.settings.goals = { kcal: 2350, protein: 185, carbs: 270, fat: 55 };
   for (let i = N; i >= 1; i--) {
     const key = addDays(today, -i);
     w += -0.045 + (rnd() - 0.5) * 0.05;
@@ -320,11 +343,13 @@ export function demoData() {
       if (rnd() < 0.6) add(key, 4, pick('Mandeln'), 25 + Math.round(rnd() * 25));
       if (rnd() < 0.3) add(key, 4, pick('Vollkornbrot'), 100);
     }
-    const habits = s.habits.filter(() => rnd() < 0.8).map((h) => h.id);
+    const allSupp = rnd() < 0.82;
+    const habits = s.habits.filter((h) => (h.supplement && allSupp) || rnd() < 0.75).map((h) => h.id);
     if (habits.length) s.habitLog[key] = habits;
-    const wd = parseKey(key).getDay();
-    if ([1, 2, 4, 5].includes(wd) && rnd() < 0.9) {
-      const day = days[dayIdx++ % days.length];
+    const slot = s.settings.schedule.slots[(N - i) % s.settings.schedule.slots.length];
+    if (slot && rnd() < 0.88) {
+      const day = days.find((x) => x.id === slot);
+      void dayIdx;
       const startH = 17 + Math.floor(rnd() * 3);
       const d = parseKey(key);
       d.setHours(startH, Math.floor(rnd() * 60));

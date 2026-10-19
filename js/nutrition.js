@@ -3,6 +3,7 @@ import { state, save, dayDiary, ensureDiary, entryNut, totals, foodById, makeEnt
 import { uid, esc, fmt, fmtMax, parseNum, todayKey, addDays, fmtDay, round } from './utils.js';
 import { icon, onAct, onInput, onChange, openSheet, closeSheet, topSheet, redrawSheet, confirmDialog, menuDialog, toast } from './ui.js';
 import { ring } from './charts.js';
+import { nutritionCheck } from './success.js';
 
 let nutDate = todayKey();
 export const setNutDate = (k) => { nutDate = k; };
@@ -30,7 +31,7 @@ export function renderNutrition() {
     </div>
     <div class="card">
       <div class="kcal-sum">
-        <div class="ring">${ring(t.kcal / (g.kcal || 1), 'var(--food)', t.kcal > g.kcal * 1.02)}
+        <div class="ring">${ring(t.kcal / (g.kcal || 1), 'var(--food)', t.kcal > g.kcal * (1 + state.settings.nutritionTolerance / 100))}
           <div class="c"><span class="big-num ${left < 0 ? 'down' : ''}">${fmt(Math.abs(left))}</span><span class="tiny muted">${left < 0 ? 'kcal drüber' : 'kcal übrig'}</span></div></div>
         <div class="stack" style="gap:12px">
           <div class="equation">
@@ -45,9 +46,21 @@ export function renderNutrition() {
         ${macroBar('Kohlenh.', t.carbs, g.carbs, 'var(--carbs)')}
         ${macroBar('Fett', t.fat, g.fat, 'var(--fat)')}
       </div>
+      ${targetLine(nutDate)}
     </div>
     ${state.settings.mealNames.map((_, i) => mealCard(d, i)).join('')}
     ${d.entries.length ? '' : `<button class="btn block" data-act="nut-copy-day">${icon('copy')}Gestern komplett übernehmen</button>`}`;
+}
+
+function targetLine(key) {
+  const c = nutritionCheck(key);
+  const tol = state.settings.nutritionTolerance;
+  if (!c.parts.length) return '';
+  const miss = c.parts.filter((p) => !p.ok);
+  const status = !c.logged ? `<span class="chip">± ${tol} % Zielbereich</span>`
+    : c.ok ? `<span class="chip good">${icon('check')}Im Zielbereich</span>`
+      : `<span class="chip food">${miss.map((p) => `${p.label} ${p.value < p.lo ? 'zu niedrig' : 'zu hoch'}`).join(' · ')}</span>`;
+  return `<div class="row between wrap" style="gap:6px">${status}<button class="link small" data-act="nut-goals" style="color:var(--muted)">${fmt(c.parts[0].lo)}–${fmt(c.parts[0].hi)} ${c.parts[0].key === 'kcal' ? 'kcal' : 'g'}</button></div>`;
 }
 
 function macroBar(label, val, goal, color) {
@@ -716,6 +729,10 @@ export function openGoals() {
           <label class="field"><span>Fett g</span><input class="input" name="fat" inputmode="numeric" value="${g.fat}" data-in="goals-calc"></label>
         </div>
         <div class="small muted" id="goals-hint"></div>
+        <h2 class="sec">Zielbereich</h2>
+        <div class="small muted">Für die Erfolgskästchen zählt ein Tag als geschafft, wenn die gewählten Werte innerhalb der Abweichung liegen.</div>
+        <label class="field"><span>Erlaubte Abweichung</span><select class="input" name="tol">${[5, 10, 15, 20, 25, 30].map((v) => `<option value="${v}" ${state.settings.nutritionTolerance === v ? 'selected' : ''}>± ${v} %</option>`).join('')}</select></label>
+        <div class="row wrap" style="gap:14px">${[['kcal', 'Kalorien'], ['protein', 'Eiweiß'], ['carbs', 'Kohlenhydrate'], ['fat', 'Fett']].map(([k, l]) => `<label class="row" style="gap:6px"><input type="checkbox" name="chk-${k}" ${state.settings.nutritionChecks[k] ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--accent)">${l}</label>`).join('')}</div>
         <h2 class="sec">Mahlzeiten</h2>
         ${state.settings.mealNames.map((n, i) => `<label class="field"><span>Mahlzeit ${i + 1}</span><input class="input" name="meal${i}" value="${esc(n)}"></label>`).join('')}
       </form>`,
@@ -740,6 +757,8 @@ onAct({
     const fd = new FormData(document.getElementById('goals-form'));
     const g = state.settings.goals;
     for (const k of ['kcal', 'protein', 'carbs', 'fat']) { const v = parseNum(fd.get(k)); if (v != null && v >= 0) g[k] = Math.round(v); }
+    state.settings.nutritionTolerance = +fd.get('tol') || 15;
+    for (const k of ['kcal', 'protein', 'carbs', 'fat']) state.settings.nutritionChecks[k] = fd.get(`chk-${k}`) === 'on';
     state.settings.mealNames = state.settings.mealNames.map((n, i) => String(fd.get(`meal${i}`) || '').trim() || n);
     closeSheet();
     save();

@@ -1,9 +1,9 @@
 // Offline-Cache für die App-Dateien. Bei Änderungen VERSION erhöhen.
-const VERSION = 'formkurve-v2';
+const VERSION = 'formkurve-v3';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/store.js', 'js/utils.js', 'js/ui.js', 'js/charts.js',
-  'js/training.js', 'js/nutrition.js', 'js/body.js', 'js/dashboard.js',
+  'js/training.js', 'js/success.js', 'js/nutrition.js', 'js/body.js', 'js/dashboard.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 

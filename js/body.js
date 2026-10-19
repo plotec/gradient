@@ -16,6 +16,10 @@ export function renderBody() {
   const weekAgo = trend.filter((p) => p.key <= addDays(todayKey(), -7)).pop();
   const done = new Set(state.habitLog[bodyDate] || []);
   const isToday = bodyDate === todayKey();
+  const supps = state.habits.filter((h) => h.supplement);
+  const allSupps = supps.length && supps.every((h) => done.has(h.id));
+  const habitRow = (h) => `<button class="habit ${done.has(h.id) ? 'on' : ''}" style="--hc:${h.color}" data-act="habit-toggle" data-id="${h.id}">
+          <span class="box">${icon('check')}</span><span class="t">${esc(h.name)}</span>${streak(h.id) > 1 ? `<span class="tiny muted">${streak(h.id)} Tage in Folge</span>` : ''}</button>`;
   return `
     <div class="page-head"><div><h1>Körper</h1><div class="sub">Gewicht & tägliche Habits</div></div></div>
     <div class="date-nav">
@@ -43,9 +47,11 @@ export function renderBody() {
       <div class="card-head"><h3>Habits</h3><button class="link" data-act="habits-manage">Bearbeiten</button></div>
       <div>
         <div class="habit ${w != null ? 'on' : ''}" style="--hc:var(--body)"><span class="box">${icon('check')}</span><span class="t">Gewogen</span><span class="tiny faint">automatisch</span></div>
-        ${state.habits.map((h) => `<button class="habit ${done.has(h.id) ? 'on' : ''}" style="--hc:${h.color}" data-act="habit-toggle" data-id="${h.id}">
-          <span class="box">${icon('check')}</span><span class="t">${esc(h.name)}</span>${streak(h.id) > 1 ? `<span class="tiny muted">${streak(h.id)} Tage in Folge</span>` : ''}</button>`).join('')}
+        ${state.habits.filter((h) => !h.supplement).map(habitRow).join('')}
       </div>
+      ${supps.length ? `<div class="row between" style="margin-top:4px"><span class="small muted" style="font-weight:500">Supplements · ${supps.filter((h) => done.has(h.id)).length}/${supps.length}</span>
+        <button class="link small" data-act="supps-all" data-on="${allSupps ? 0 : 1}">${allSupps ? 'Alle zurücksetzen' : 'Alle abhaken'}</button></div>
+      <div>${supps.map(habitRow).join('')}</div>` : ''}
     </div>
 
     <div class="card">
@@ -118,10 +124,18 @@ onAct({
     save();
   },
   'habits-manage': () => openHabits(),
+  'supps-all': (el) => {
+    const ids = state.habits.filter((h) => h.supplement).map((h) => h.id);
+    const set = new Set(state.habitLog[bodyDate] || []);
+    ids.forEach((id) => (el.dataset.on === '1' ? set.add(id) : set.delete(id)));
+    if (set.size) state.habitLog[bodyDate] = [...set]; else delete state.habitLog[bodyDate];
+    save();
+  },
 });
 onChange({ 'body-date': (el) => { if (el.value && el.value <= todayKey()) { bodyDate = el.value; rerender(); } } });
 
 // ---------- Habits verwalten ----------
+const s0 = (ui) => (ui.supp ? 'checked' : '');
 function openHabits() {
   const ui = { color: HABIT_COLORS[state.habits.length % HABIT_COLORS.length] };
   openSheet({
@@ -130,17 +144,19 @@ function openHabits() {
     render: () => ({
       title: 'Habits',
       body: `
-        <div class="small muted">Tägliche Gewohnheiten zum Abhaken – z. B. Supplements, Wasser, Schritte, Dehnen. Jedes Habit bekommt im Dashboard eine eigene Jahresübersicht.</div>
+        <div class="small muted">Tägliche Gewohnheiten zum Abhaken. Als „Supplement“ markierte Habits werden in den Erfolgskästchen zusammengefasst: Der Tag zählt, wenn alle genommen wurden. Alle anderen Habits bekommen eigene Kästchen.</div>
         ${state.habits.length ? `<div class="card" style="padding:4px 14px"><div class="list">${state.habits.map((h, i) => `
           <div class="li">
             <span style="width:14px;height:14px;border-radius:4px;background:${h.color};flex:none"></span>
             <input class="input grow" value="${esc(h.name)}" data-ch="habit-rename" data-id="${h.id}" style="min-height:38px" aria-label="Name">
+            <button class="chip ${h.supplement ? 'good' : ''}" data-act="habit-supp" data-id="${h.id}" style="border:0" aria-pressed="${!!h.supplement}">Supplement</button>
             <button class="icon-btn sm plain" data-act="habit-move" data-i="${i}" data-d="-1" ${i ? '' : 'disabled style="opacity:.3"'} aria-label="Nach oben">${icon('up')}</button>
             <button class="icon-btn sm plain" data-act="habit-del" data-id="${h.id}" aria-label="Löschen">${icon('trash')}</button>
           </div>`).join('')}</div></div>` : ''}
         <div class="card">
           <h3 style="margin:0;font-size:16px">Neues Habit</h3>
           <form class="row" data-submit="habit-add"><input class="input grow" id="habit-new" placeholder="z. B. Magnesium" autocomplete="off"><button class="btn primary">${icon('plus')}</button></form>
+          <label class="row small" style="gap:8px"><input type="checkbox" id="habit-new-supp" ${s0(ui)} style="width:20px;height:20px;accent-color:var(--accent)">Ist ein Supplement</label>
           <div class="swatches">${HABIT_COLORS.map((c) => `<button style="background:${c}" class="${ui.color === c ? 'on' : ''}" data-act="habit-color" data-c="${c}" aria-label="Farbe"></button>`).join('')}</div>
         </div>`,
     }),
@@ -152,12 +168,14 @@ onAct({
     const s = hs(); const el = document.getElementById('habit-new');
     const name = el.value.trim();
     if (!name) return;
-    state.habits.push({ id: uid(), name, color: s.ui.color });
+    s.ui.supp = document.getElementById('habit-new-supp')?.checked;
+    state.habits.push({ id: uid(), name, color: s.ui.color, supplement: !!s.ui.supp });
     s.ui.color = HABIT_COLORS[state.habits.length % HABIT_COLORS.length];
     save();
     document.getElementById('habit-new')?.focus();
   },
   'habit-color': (el) => { const s = hs(); s.ui.color = el.dataset.c; redrawSheet(s); },
+  'habit-supp': (el) => { const h = state.habits.find((x) => x.id === el.dataset.id); h.supplement = !h.supplement; save(); },
   'habit-move': (el) => {
     const i = +el.dataset.i, j = i + +el.dataset.d;
     [state.habits[i], state.habits[j]] = [state.habits[j], state.habits[i]];
