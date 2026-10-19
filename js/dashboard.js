@@ -1,9 +1,11 @@
 // Dashboard: Tagesüberblick, Kalorienverbrauch (TDEE), Jahresübersichten, Diagramme. Dazu die Einstellungen.
 import { state, save, dayKcal, latestWeight, weightTrend, workoutDayKeys, computeTdee, totals, dayDiary, replaceState, resetAll, demoData, storageWorks } from './store.js';
 import { esc, fmt, fmtMax, signed, todayKey, addDays, parseKey, dayKey, MONTHS, fmtShort, sum } from './utils.js';
-import { icon, onAct, onChange, openSheet, closeSheet, topSheet, confirmDialog, toast } from './ui.js';
+import { icon, onAct, onChange, openSheet, closeSheet, topSheet, redrawSheet, confirmDialog, toast } from './ui.js';
 import { lineChart, barChart } from './charts.js';
 import { dayStatus, rate, yearStatuses, supplementHabits, otherHabits } from './success.js';
+import { currentSession, logout, changePassword, cloudEnabled, getSyncStatus, onSyncStatus, AuthError } from './cloud.js';
+import { loadBls, blsCount, importBlsFile, BLS_CREDIT } from './foods-db.js';
 
 let year = new Date().getFullYear();
 let period = 'week';
@@ -325,7 +327,17 @@ onAct({
 // =====================================================================
 // Einstellungen
 // =====================================================================
+function syncLabel() {
+  const s = currentSession();
+  if (!s) return '';
+  if (s.mode !== 'cloud') return cloudEnabled ? 'Lokaler Account' : 'Lokaler Account · nur auf diesem Gerät';
+  const st = getSyncStatus();
+  return { synchron: 'Cloud · synchronisiert', speichert: 'Cloud · speichert …', ausstehend: 'Cloud · wird gleich gespeichert', 'lädt': 'Cloud · lädt …', offline: 'Cloud · offline, wird später gespeichert', Fehler: 'Cloud · Speichern fehlgeschlagen, neuer Versuch folgt' }[st] || 'Cloud';
+}
+onSyncStatus(() => { const el = document.getElementById('sync-status'); if (el) el.textContent = syncLabel(); });
+
 function openSettings() {
+  loadBls().then(() => { const t = topSheet(); if (t?.id === 'settings') redrawSheet(t); });
   openSheet({
     id: 'settings',
     render: () => {
@@ -333,6 +345,18 @@ function openSettings() {
       return {
         title: 'Einstellungen',
         body: `
+          <h2 class="sec">Account</h2>
+          <div class="card">
+            <div class="row between">
+              <div class="row" style="gap:10px"><span class="icon-btn" style="background:var(--accent-soft);color:var(--accent)">${icon('user')}</span>
+                <div><div style="font-weight:500">${esc(currentSession()?.name || '')}</div>
+                <div class="small muted" id="sync-status">${syncLabel()}</div></div></div>
+            </div>
+            <div class="grid2">
+              <button class="btn" data-act="pw-change">Passwort ändern</button>
+              <button class="btn danger" data-act="logout">Abmelden</button>
+            </div>
+          </div>
           <h2 class="sec">Ziele</h2>
           <div class="card">
             <div class="grid2">
@@ -347,9 +371,15 @@ function openSettings() {
           </div>
           <h2 class="sec">Darstellung</h2>
           <div class="card"><div class="seg">${[['auto', 'System'], ['dark', 'Dunkel'], ['light', 'Hell']].map(([k, l]) => `<button class="${s.theme === k ? 'on' : ''}" data-act="set-theme" data-k="${k}">${l}</button>`).join('')}</div></div>
+          <h2 class="sec">Lebensmittel-Datenbank</h2>
+          <div class="card">
+            <div class="small muted">${blsCount() ? `${fmt(blsCount())} Lebensmittel aus dem Bundeslebensmittelschlüssel sind auf diesem Gerät verfügbar.` : 'Der Bundeslebensmittelschlüssel (BLS 4.0, rund 7.100 Lebensmittel) ist noch nicht geladen. Er wird beim Veröffentlichen automatisch eingebunden. Alternativ: Datei auf blsdb.de herunterladen (ZIP) und hier auswählen.'}</div>
+            <label class="btn" style="position:relative">${icon('upload')}BLS-Datei importieren<input type="file" accept=".zip,.xlsx,.json" data-ch="bls-import" style="position:absolute;inset:0;opacity:0"></label>
+            <div class="tiny faint">Quelle: ${esc(BLS_CREDIT)}</div>
+          </div>
           <h2 class="sec">Daten</h2>
           <div class="card">
-            <div class="small muted">Alle Daten liegen nur auf diesem Gerät im Browser. Sichere sie regelmäßig als Datei, z. B. in iCloud Drive oder Google Drive.</div>
+            <div class="small muted">${currentSession()?.mode === 'cloud' ? 'Deine Daten liegen in deinem Account und zusätzlich auf diesem Gerät. Ein Backup als Datei schadet trotzdem nicht.' : 'Deine Daten liegen nur auf diesem Gerät. Sichere sie regelmäßig als Datei, z. B. in iCloud Drive oder Google Drive.'}</div>
             <div class="grid2">
               <button class="btn" data-act="data-export">${icon('download')}Sichern</button>
               <label class="btn" style="position:relative">${icon('upload')}Wiederherstellen<input type="file" accept="application/json,.json" data-ch="data-import" style="position:absolute;inset:0;opacity:0"></label>
@@ -357,7 +387,7 @@ function openSettings() {
             <div class="small muted num">${state.workouts.length} Trainings · ${Object.keys(state.diary).length} Ernährungstage · ${Object.keys(state.weights).length} Gewichte · ${state.foods.length} Lebensmittel</div>
             <button class="btn danger" data-act="data-reset">${icon('trash')}Alle Daten löschen</button>
           </div>
-          <p class="tiny faint" style="text-align:center">Formkurve · Lebensmittel-Onlinesuche: Open Food Facts (ODbL)</p>`,
+          <p class="tiny faint" style="text-align:center">Formkurve · Onlinesuche: Open Food Facts (ODbL) · Nährwertdatenbank: BLS 4.0, Max Rubner-Institut (CC BY 4.0)</p>`,
       };
     },
   });
@@ -392,6 +422,18 @@ onAct({
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     toast('Backup erstellt');
   },
+  'logout': async () => {
+    if (!(await confirmDialog({ title: 'Abmelden?', text: currentSession()?.mode === 'cloud' ? 'Deine Daten bleiben in deinem Account gespeichert.' : 'Deine Daten bleiben auf diesem Gerät gespeichert und sind nach dem Anmelden wieder da.', ok: 'Abmelden' }))) return;
+    await logout();
+    location.reload();
+  },
+  'pw-change': () => openPasswordSheet(),
+  'pw-save': async () => {
+    const o = document.getElementById('pw-old').value, n = document.getElementById('pw-new').value, n2 = document.getElementById('pw-new2').value;
+    if (n !== n2) { toast('Die neuen Passwörter stimmen nicht überein'); return; }
+    try { await changePassword(o, n); closeSheet(); toast('Passwort geändert'); }
+    catch (e) { toast(e instanceof AuthError ? e.message : 'Passwort konnte nicht geändert werden'); }
+  },
   'data-reset': async () => {
     if (!(await confirmDialog({ title: 'Wirklich alle Daten löschen?', text: 'Trainings, Ernährung, Gewichte und Habits werden entfernt. Übungen und Grund-Lebensmittel werden neu angelegt. Erstelle vorher ein Backup.', ok: 'Alles löschen', danger: true }))) return;
     resetAll();
@@ -399,7 +441,36 @@ onAct({
     toast('Alle Daten gelöscht');
   },
 });
+function openPasswordSheet() {
+  openSheet({
+    id: 'pw',
+    render: () => ({
+      title: 'Passwort ändern',
+      body: `<form class="stack" data-submit="pw-save">
+        <label class="field"><span>Bisheriges Passwort</span><input class="input" id="pw-old" type="password" autocomplete="current-password"></label>
+        <label class="field"><span>Neues Passwort (mind. 6 Zeichen)</span><input class="input" id="pw-new" type="password" autocomplete="new-password"></label>
+        <label class="field"><span>Neues Passwort wiederholen</span><input class="input" id="pw-new2" type="password" autocomplete="new-password"></label>
+      </form>`,
+      foot: `<button class="btn primary block lg" data-act="pw-save">Speichern</button>`,
+    }),
+  });
+}
+
 onChange({
+  'bls-import': async (el) => {
+    const file = el.files?.[0];
+    if (!file) return;
+    toast('Importiere … das dauert ein paar Sekunden', 6000);
+    try {
+      const n = await importBlsFile(file);
+      toast(`${fmt(n)} Lebensmittel importiert`);
+      const t = topSheet(); if (t?.id === 'settings') redrawSheet(t);
+    } catch (e) {
+      console.warn(e);
+      toast(e.message || 'Import fehlgeschlagen', 4000);
+    }
+    el.value = '';
+  },
   'set-rate': (el) => { state.settings.weeklyRate = +el.value; save(); },
   'set-rest': (el) => { state.settings.restDefault = +el.value; save(); },
   'data-import': async (el) => {

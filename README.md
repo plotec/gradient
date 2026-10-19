@@ -7,7 +7,8 @@ Persönliche Fitness-App fürs Handy: Training (wie Alpha Progression), Ernähru
 **Übersicht** – Tageswerte, berechneter Kalorienverbrauch (TDEE), Jahresübersichten mit 365 Kästchen für Training, Wiegen, Ernährung und jedes Habit, Gewichts- und Kaloriendiagramm.
 
 **Training**
-- Übungen anlegen (Muskelgruppe, Equipment, Pause, Notiz) – 24 Standardübungen sind vorhanden
+- Übungen einfach mit Namen anlegen (optional Gruppe, Notiz, Pause) – auch direkt beim Suchen
+- Gewichte völlig frei, z. B. 10,2 kg – keine vorgegebenen Steigerungsschritte
 - Trainingstage anlegen und Übungen einsortieren (Sätze, Wdh-Ziel, Pause, Reihenfolge)
 - Training starten: Trainingszeit läuft, Sätze sind mit den Werten vom letzten Mal vorbelegt
 - Pro Satz: kg · Wdh · berechnetes 10RM · Qualität 1–10 · Abhaken
@@ -41,6 +42,42 @@ Geschätztes Gewicht für 10 Wiederholungen: `Gewicht × (1 + Wdh/30) × 0,75` (
 
 Lokal testen: `python3 -m http.server` im Ordner starten und `http://localhost:8000` öffnen.
 
+## Accounts & Cloud (Supabase)
+
+Jeder Nutzer meldet sich mit **Name + Passwort** an; Übungen, Trainings, Ernährung und Habits liegen unter seinem Account.
+
+- **Ohne Einrichtung:** lokale Accounts – funktionieren sofort, aber nur auf dem jeweiligen Gerät.
+- **Mit Supabase (kostenloser Tarif reicht):** echte Accounts, Daten auf allen Geräten synchron.
+
+Einrichtung (einmalig, ca. 10 Minuten):
+
+1. Auf [supabase.com](https://supabase.com) ein Projekt anlegen.
+2. **SQL Editor** → Inhalt von `supabase/schema.sql` ausführen (legt die Tabelle mit Zugriffsschutz an).
+3. **Authentication → Sign In / Providers → Email:** „Confirm email“ **ausschalten** (Login läuft über Name + Passwort, nicht über E-Mail).
+4. **Project Settings → API:** „Project URL“ und „anon public key“ in `js/config.js` eintragen, committen.
+
+Bisherige Daten auf dem Gerät werden beim ersten Anlegen eines Accounts automatisch übernommen.
+
+## Spracheingabe
+
+Im Ernährungsbereich (Mikrofon oben rechts, im Plus-Menü oder beim Hinzufügen) einfach sagen, was du gegessen hast, z. B. *„250 Gramm Nudeln, eine halbe Packung Cremefine, 500 Gramm Hackfleisch und eine Handvoll Streukäse“*. Die App zeigt die erkannten Zutaten mit Mengen und Kalorien zum Prüfen; Treffer und Mengen lassen sich antippen und ändern. „Mein Anteil“ (½, ⅓ …) teilt gemeinsam gekochtes Essen auf, optional wird das Ganze als wiederkehrende Mahlzeit gespeichert.
+
+- **Erkennung auf dem Gerät** (immer verfügbar): versteht Mengen wie Gramm, Kilo, Packung, Becher, Handvoll, Esslöffel, Scheibe, Stück und sucht in eigenen Lebensmitteln, der Grundliste und dem BLS.
+- **KI-Auswertung** (genauer, auch bei frei formulierten Sätzen): mit Cloud-Account über die Supabase-Funktion `supabase/functions/parse-meal` (Claude). Einrichtung:
+  ```bash
+  supabase functions deploy parse-meal
+  supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+  ```
+  Der API-Schlüssel bleibt auf dem Server; nur angemeldete Accounts können die Funktion nutzen. Werte aus der Datenbank haben Vorrang, wenn sie zur KI-Schätzung passen.
+
+Spracherkennung: Chrome/Android direkt in der App; auf dem iPhone ggf. das Mikrofon der Tastatur im Textfeld nutzen.
+
+## Lebensmittel-Datenbank (BLS 4.0)
+
+Der [Bundeslebensmittelschlüssel](https://blsdb.de) des Max Rubner-Instituts (rund 7.100 Lebensmittel, Lizenz CC BY 4.0) wird beim Veröffentlichen über GitHub Actions automatisch geladen (`tools/fetch_bls.py` → `data/bls.json`). Klappt der Download nicht, kann die ZIP-Datei von blsdb.de auch unter **Einstellungen → Lebensmittel-Datenbank → BLS-Datei importieren** eingelesen werden.
+
+Quelle: Max Rubner-Institut (2025): Bundeslebensmittelschlüssel (BLS), Version 4.0. Karlsruhe.
+
 ## Daten
 
-Alles liegt im Browser-Speicher des Geräts. Unter **Übersicht → Zahnrad → Sichern** regelmäßig ein Backup (JSON) erstellen, z. B. in iCloud Drive.
+Lokal liegen die Daten im Browser-Speicher des Geräts (mit Cloud-Account zusätzlich in Supabase). Unter **Übersicht → Zahnrad → Sichern** lässt sich jederzeit ein Backup (JSON) erstellen.

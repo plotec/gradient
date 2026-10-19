@@ -1,6 +1,6 @@
 // Bereich Training: Trainingstage, Übungen, laufendes Training, Zusammenfassung, Verlauf.
-import { state, save, exById, dayById, exerciseHistory, bestE10, lastSetsFor, setVolume, MUSCLES, EQUIPMENT } from './store.js';
-import { uid, esc, fmt, fmtMax, signed, parseNum, e10rm, roundTo, fmtClock, fmtDuration, fmtDay, dayKey, sum, MONTHS, todayKey, addDays, parseKey, daysBetween } from './utils.js';
+import { state, save, exById, dayById, exerciseHistory, bestE10, lastSetsFor, setVolume } from './store.js';
+import { uid, esc, fmt, fmtMax, signed, parseNum, e10rm, round, fmtClock, fmtDuration, fmtDay, dayKey, sum, MONTHS, todayKey, addDays, parseKey, daysBetween } from './utils.js';
 import { icon, onAct, onInput, onChange, openSheet, closeSheet, confirmDialog, menuDialog, toast, beep, sheetOpen, topSheet } from './ui.js';
 import { lineChart } from './charts.js';
 import { plannedFor } from './success.js';
@@ -8,7 +8,8 @@ import { plannedFor } from './success.js';
 let sub = 'plan';
 let exSearch = '';
 
-const e10 = (w, r) => roundTo(e10rm(w, r), 0.5);
+// 10RM auf 0,1 kg genau – keine Rundung auf Scheibenschritte
+const e10 = (w, r) => round(e10rm(w, r), 1);
 const kg = (n) => `${fmtMax(n, 2)} kg`;
 const restOptions = [0, 45, 60, 90, 120, 150, 180, 240, 300];
 const restLabel = (s) => (s ? (s % 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} min` : `${s / 60} min`) : 'Aus');
@@ -63,6 +64,13 @@ function scheduleCard() {
 function renderPlan() {
   const days = state.workoutDays;
   const todayPlan = plannedFor(todayKey());
+  if (!days.length) {
+    return `<div class="card flat"><div class="stack" style="gap:10px;text-align:center;padding:8px">
+      <b style="font-weight:500">Leg deine Trainingstage an</b>
+      <span class="small muted">Zum Beispiel „Torso“ und „Limbs“. Jedem Tag gibst du deine Übungen. Danach legst du fest, in welchem Rhythmus du trainierst.</span>
+      <button class="btn primary" data-act="day-new" style="align-self:center">${icon('plus')}Ersten Trainingstag anlegen</button></div></div>
+      <button class="btn" data-act="wo-start" data-id="" ${state.activeWorkout ? 'disabled style="opacity:.5"' : ''}>${icon('bolt')}Freies Training ohne Plan</button>`;
+  }
   return `
     ${scheduleCard()}
     ${days.map((d) => {
@@ -83,28 +91,37 @@ function renderPlan() {
     </div>`;
 }
 
-function renderExercises() {
-  const q = exSearch.trim().toLowerCase();
-  const list = state.exercises.filter((e) => !q || e.name.toLowerCase().includes(q) || e.muscle.toLowerCase().includes(q));
+const exMatches = (e, q) => !q || e.name.toLowerCase().includes(q) || (e.muscle || '').toLowerCase().includes(q);
+function exGroups(q) {
   const groups = {};
-  list.forEach((e) => (groups[e.muscle] ||= []).push(e));
-  const order = [...MUSCLES, ...Object.keys(groups).filter((m) => !MUSCLES.includes(m))];
+  state.exercises.filter((e) => exMatches(e, q)).forEach((e) => (groups[e.muscle || ''] ||= []).push(e));
+  return groups;
+}
+function renderExercises() {
+  const groups = exGroups(exSearch.trim().toLowerCase());
+  if (!state.exercises.length) {
+    return `<div class="card flat"><div class="stack" style="gap:10px;text-align:center;padding:8px">
+      <b style="font-weight:500">Noch keine Übungen</b>
+      <span class="small muted">Leg deine Übungen einfach mit Namen an – so wie du sie in dein Trainingsbuch schreiben würdest.</span>
+      <button class="btn primary" data-act="ex-new" style="align-self:center">${icon('plus')}Erste Übung anlegen</button></div></div>`;
+  }
   return `
     <div class="row">
       <label class="search grow">${icon('search')}<input class="input" id="ex-search" placeholder="Übung suchen" value="${esc(exSearch)}" data-in="ex-search" autocomplete="off"></label>
       <button class="icon-btn" data-act="ex-new" aria-label="Neue Übung" style="width:44px;height:44px">${icon('plus')}</button>
     </div>
-    <div id="ex-list">${exerciseListHtml(groups, order)}</div>`;
+    <div id="ex-list">${exerciseListHtml(groups)}</div>`;
 }
-function exerciseListHtml(groups, order) {
-  const html = order.filter((m) => groups[m]).map((m) => `
-    <h2 class="sec">${esc(m)}</h2>
+function exerciseListHtml(groups) {
+  const keys = Object.keys(groups).sort((a, b) => (a === '') - (b === '') || a.localeCompare(b, 'de'));
+  const html = keys.map((m) => `
+    ${keys.length > 1 ? `<h2 class="sec">${esc(m || 'Ohne Gruppe')}</h2>` : ''}
     <div class="card" style="padding:4px 14px"><div class="list">
       ${groups[m].sort((a, b) => a.name.localeCompare(b.name, 'de')).map((e) => {
         const h = exerciseHistory(e.id);
         const best = h.length ? Math.max(...h.map((x) => bestE10(x.sets, e10))) : 0;
         return `<button class="li" data-act="ex-detail" data-id="${e.id}">
-          <div class="grow"><div class="t ellipsis">${esc(e.name)}</div><div class="s">${esc(e.equipment)} · ${h.length}× trainiert</div></div>
+          <div class="grow"><div class="t ellipsis">${esc(e.name)}</div><div class="s">${h.length ? `${h.length}× trainiert` : 'noch nicht trainiert'}${e.note ? ` · ${esc(e.note)}` : ''}</div></div>
           <div class="r">${best ? `<div class="mid-num" style="font-size:18px;color:var(--train)">${fmtMax(best, 1)}</div><div class="tiny faint">10RM kg</div>` : ''}</div>
         </button>`;
       }).join('')}
@@ -135,10 +152,7 @@ onAct({
 onInput({
   'ex-search': (el) => {
     exSearch = el.value;
-    const q = exSearch.trim().toLowerCase();
-    const groups = {};
-    state.exercises.filter((e) => !q || e.name.toLowerCase().includes(q) || e.muscle.toLowerCase().includes(q)).forEach((e) => (groups[e.muscle] ||= []).push(e));
-    document.getElementById('ex-list').innerHTML = exerciseListHtml(groups, [...MUSCLES, ...Object.keys(groups).filter((m) => !MUSCLES.includes(m))]);
+    document.getElementById('ex-list').innerHTML = exerciseListHtml(exGroups(exSearch.trim().toLowerCase()));
   },
 });
 
@@ -324,15 +338,18 @@ function openExercisePicker({ multi = false, onPick }) {
   });
   function listHtml() {
     const s = q.trim().toLowerCase();
-    const list = state.exercises.filter((e) => !s || e.name.toLowerCase().includes(s) || e.muscle.toLowerCase().includes(s))
-      .sort((a, b) => a.muscle.localeCompare(b.muscle, 'de') || a.name.localeCompare(b.name, 'de'));
-    return list.map((e) => {
+    const list = state.exercises.filter((e) => exMatches(e, s)).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+    const exact = state.exercises.some((e) => e.name.trim().toLowerCase() === s);
+    const create = s && !exact ? `<button class="li" data-act="picker-quick">
+        <span class="icon-btn sm" style="background:var(--accent);color:var(--on-accent)">${icon('plus')}</span>
+        <div class="grow"><div class="t">„${esc(q.trim())}“ anlegen</div><div class="s">Neue Übung mit diesem Namen</div></div></button>` : '';
+    return create + list.map((e) => {
       const n = picked.filter((x) => x === e.id).length;
       return `<button class="li" data-act="picker-pick" data-id="${e.id}">
-        <div class="grow"><div class="t">${esc(e.name)}</div><div class="s">${esc(e.muscle)} · ${esc(e.equipment)}</div></div>
+        <div class="grow"><div class="t">${esc(e.name)}</div>${e.note ? `<div class="s">${esc(e.note)}</div>` : ''}</div>
         ${n ? `<span class="chip train">${icon('check')}${n > 1 ? n : ''}</span>` : ''}
       </button>`;
-    }).join('') || `<div class="empty">Nichts gefunden.<br><button class="link" data-act="picker-new">„${esc(q)}“ als neue Übung anlegen</button></div>`;
+    }).join('') || (create ? '' : '<div class="empty">Noch keine Übungen. Tippe oben einen Namen ein, um eine anzulegen.</div>');
   }
   spec.pick = (id) => {
     if (!multi) { closeSheet(spec); onPick(id); return; }
@@ -345,6 +362,17 @@ function openExercisePicker({ multi = false, onPick }) {
   spec.done = () => { closeSheet(spec); onPick(picked); };
   spec.setQ = (v) => { q = v; document.getElementById('picker-list').innerHTML = listHtml(); };
   spec.newEx = () => openExerciseEditor(null, (id) => spec.pick(id), q);
+  spec.quick = () => {
+    const name = q.trim();
+    if (!name) return;
+    const id = uid();
+    state.exercises.push({ id, name, muscle: '', equipment: '', note: '', rest: null });
+    save({ silent: true });
+    q = '';
+    const inp = document.getElementById('picker-q'); if (inp) inp.value = '';
+    spec.pick(id);
+    if (multi) document.getElementById('picker-list').innerHTML = listHtml();
+  };
 }
 const pickerSpec = () => findSpec('ex-picker');
 function findSpec(id) { const t = topSheet(); return t && t.id === id ? t : null; }
@@ -353,12 +381,13 @@ onAct({
   'picker-pick': (el) => pickerSpec()?.pick(el.dataset.id),
   'picker-done': () => pickerSpec()?.done(),
   'picker-new': () => pickerSpec()?.newEx(),
+  'picker-quick': () => pickerSpec()?.quick(),
 });
 onInput({ 'picker-q': (el) => pickerSpec()?.setQ(el.value) });
 
 function openExerciseEditor(id, onSaved, presetName = '') {
   const ex = id ? exById(id) : null;
-  const draft = ex ? { ...ex } : { name: presetName, muscle: 'Brust', equipment: 'Langhantel', note: '', rest: null };
+  const draft = ex ? { ...ex } : { name: presetName, muscle: '', equipment: '', note: '', rest: null };
   openSheet({
     id: 'ex-editor',
     render: () => ({
@@ -366,10 +395,8 @@ function openExerciseEditor(id, onSaved, presetName = '') {
       body: `
         <form class="stack" data-submit="ex-save" id="ex-form">
           <label class="field"><span>Name</span><input class="input" name="name" id="exf-name" required value="${esc(draft.name)}" placeholder="z. B. Bankdrücken" autocomplete="off"></label>
-          <div class="grid2">
-            <label class="field"><span>Muskelgruppe</span><select class="input" name="muscle">${MUSCLES.map((m) => `<option ${m === draft.muscle ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
-            <label class="field"><span>Equipment</span><select class="input" name="equipment">${EQUIPMENT.map((m) => `<option ${m === draft.equipment ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
-          </div>
+          <label class="field"><span>Gruppe (optional, z. B. Brust oder Torso)</span><input class="input" name="muscle" value="${esc(draft.muscle || '')}" list="ex-groups" autocomplete="off">
+            <datalist id="ex-groups">${[...new Set(state.exercises.map((e) => e.muscle).filter(Boolean))].map((m) => `<option value="${esc(m)}">`).join('')}</datalist></label>
           <label class="field"><span>Standard-Pause</span><select class="input" name="rest"><option value="">Wie in Einstellungen (${restLabel(state.settings.restDefault)})</option>${restOptions.map((s) => `<option value="${s}" ${draft.rest === s ? 'selected' : ''}>${restLabel(s)}</option>`).join('')}</select></label>
           <label class="field"><span>Notiz (Einstellungen, Technik …)</span><textarea class="input" name="note" placeholder="z. B. Sitz Stufe 4, Griff eng">${esc(draft.note)}</textarea></label>
         </form>
@@ -382,7 +409,7 @@ function openExerciseEditor(id, onSaved, presetName = '') {
       const fd = new FormData(f);
       const name = String(fd.get('name')).trim();
       if (!name) { toast('Bitte einen Namen eingeben'); return; }
-      const data = { name, muscle: fd.get('muscle'), equipment: fd.get('equipment'), note: String(fd.get('note')).trim(), rest: fd.get('rest') === '' ? null : +fd.get('rest') };
+      const data = { name, muscle: String(fd.get('muscle') || '').trim(), equipment: draft.equipment || '', note: String(fd.get('note')).trim(), rest: fd.get('rest') === '' ? null : +fd.get('rest') };
       let newId = id;
       if (ex) Object.assign(ex, data);
       else { newId = uid(); state.exercises.push({ id: newId, ...data }); }
@@ -427,7 +454,7 @@ function openExerciseDetail(id) {
         title: ex.name,
         right: `<button class="icon-btn plain" data-act="ex-edit" data-id="${id}" aria-label="Bearbeiten">${icon('edit')}</button>`,
         body: `
-          <div class="row wrap"><span class="chip train">${esc(ex.muscle)}</span><span class="chip">${esc(ex.equipment)}</span>${ex.note ? `<span class="small muted">${esc(ex.note)}</span>` : ''}</div>
+          ${ex.muscle || ex.note ? `<div class="row wrap">${ex.muscle ? `<span class="chip train">${esc(ex.muscle)}</span>` : ''}${ex.note ? `<span class="small muted">${esc(ex.note)}</span>` : ''}</div>` : ''}
           <div class="grid2">
             <div class="stat"><span class="lbl">Bestes 10RM</span><span class="mid-num" style="color:var(--train)">${bestE ? kg(bestE) : '–'}</span></div>
             <div class="stat"><span class="lbl">Höchstgewicht</span><span class="mid-num">${maxW ? kg(maxW) : '–'}</span></div>

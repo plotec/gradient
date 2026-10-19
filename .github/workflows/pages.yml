@@ -22,6 +22,15 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Lebensmittel-Datenbank (BLS 4.0) holen
+        continue-on-error: true
+        run: |
+          pip install openpyxl
+          mkdir -p data
+          python tools/fetch_bls.py data/bls.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

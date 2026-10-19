@@ -1,7 +1,8 @@
 // Datenhaltung: ein JSON-Objekt im localStorage, plus abgeleitete Auswertungen.
 import { uid, todayKey, addDays, sum, linreg, daysBetween, parseKey } from './utils.js';
 
-const KEY = 'formkurve-v1';
+const LEGACY_KEY = 'formkurve-v1';
+let KEY = LEGACY_KEY;
 
 const EXERCISES = [
   ['Bankdrücken', 'Brust', 'Langhantel'],
@@ -59,11 +60,77 @@ const FOODS = [
   ['Mandeln', 600, 21, 7, 52, 'g', [['1 Handvoll', 25]]],
   ['Gouda', 356, 25, 0, 28, 'g', [['1 Scheibe', 25]]],
   ['Butter', 741, 0.7, 0.6, 83, 'g', [['1 TL', 5]]],
+  // Erweiterte Grundliste (Richtwerte je 100 g / ml, bis die BLS-Datenbank importiert ist)
+  ['Nudeln, gekocht', 150, 5.2, 29.5, 0.9, 'g', []],
+  ['Reis, gekocht', 130, 2.7, 28.5, 0.3, 'g', []],
+  ['Hackfleisch gemischt, roh', 248, 18.5, 0, 19.5, 'g', [['1 Packung', 500]]],
+  ['Putenbrust, roh', 105, 24, 0, 1, 'g', []],
+  ['Hähnchenschenkel ohne Haut, roh', 125, 19.5, 0, 5, 'g', []],
+  ['Schweinefilet, roh', 109, 21.5, 0, 2.5, 'g', []],
+  ['Bacon / Speck', 405, 14, 0.5, 38.5, 'g', [['1 Scheibe', 10]]],
+  ['Salami', 380, 22, 0.5, 32, 'g', [['1 Scheibe', 8]]],
+  ['Kochschinken', 115, 19, 1, 3.5, 'g', [['1 Scheibe', 20]]],
+  ['Wiener Würstchen', 275, 13, 1, 24, 'g', [['1 Stück', 50]]],
+  ['Bratwurst', 300, 14, 0.5, 27, 'g', [['1 Stück', 100]]],
+  ['Lachs, geräuchert', 180, 22, 0, 10, 'g', []],
+  ['Garnelen, roh', 80, 18, 0, 1, 'g', []],
+  ['Crème fraîche 30 %', 292, 2.4, 2.6, 30, 'g', [['1 Becher', 200], ['1 EL', 15]]],
+  ['Cremefine zum Kochen 15 %', 158, 2.8, 4.5, 15, 'ml', [['1 Packung', 200]]],
+  ['Schlagsahne 30 %', 292, 2.4, 3.2, 30, 'ml', [['1 Becher', 200]]],
+  ['Schmand 24 %', 240, 2.7, 3.5, 24, 'g', [['1 Becher', 200]]],
+  ['Frischkäse Doppelrahm', 260, 5.5, 3, 25, 'g', [['1 Packung', 200]]],
+  ['Körniger Frischkäse', 98, 12.5, 1.5, 4.5, 'g', [['1 Becher', 200]]],
+  ['Mozzarella', 250, 18, 1, 19, 'g', [['1 Kugel', 125]]],
+  ['Feta', 265, 17, 0.5, 21.5, 'g', [['1 Packung', 200]]],
+  ['Parmesan', 400, 33, 0, 29, 'g', [['1 EL gerieben', 6]]],
+  ['Reibekäse / Streukäse (Gouda gerieben)', 360, 25, 0.1, 28.5, 'g', [['1 Handvoll', 30], ['1 Packung', 200]]],
+  ['Joghurt natur 3,5 %', 66, 3.8, 4.7, 3.5, 'g', [['1 Becher', 150]]],
+  ['Hafermilch', 46, 0.8, 6.7, 1.5, 'ml', [['1 Glas', 250]]],
+  ['Toastbrot', 260, 8, 48, 3.5, 'g', [['1 Scheibe', 25]]],
+  ['Brötchen (Weizen)', 255, 8.5, 50, 1.5, 'g', [['1 Stück', 60]]],
+  ['Weizen-Tortilla (Wrap)', 300, 8.5, 50, 7, 'g', [['1 Stück', 60]]],
+  ['Reiswaffeln', 385, 8, 81, 3, 'g', [['1 Stück', 8]]],
+  ['Pommes frites, zubereitet', 290, 3.5, 36, 14, 'g', []],
+  ['Pizza Margherita (TK)', 230, 9, 30, 8, 'g', [['1 Pizza', 350]]],
+  ['Kidneybohnen, abgetropft', 105, 8, 15, 0.5, 'g', [['1 Dose', 250]]],
+  ['Mais, abgetropft', 85, 3, 15, 1.2, 'g', [['1 Dose', 140]]],
+  ['Kichererbsen, abgetropft', 120, 7, 16, 2.5, 'g', [['1 Dose', 240]]],
+  ['Linsen, roh', 320, 24, 49, 1.5, 'g', []],
+  ['Tomaten, passiert', 32, 1.5, 5.5, 0.2, 'g', [['1 Packung', 500]]],
+  ['Tomate', 18, 1, 2.9, 0.2, 'g', [['1 Stück', 80]]],
+  ['Gurke', 12, 0.6, 1.8, 0.2, 'g', []],
+  ['Paprika', 30, 1, 5, 0.3, 'g', [['1 Stück', 150]]],
+  ['Zwiebel', 32, 1.2, 6, 0.2, 'g', [['1 Stück', 80]]],
+  ['Möhre / Karotte', 36, 0.9, 7, 0.2, 'g', [['1 Stück', 80]]],
+  ['Champignons', 22, 3, 1, 0.3, 'g', []],
+  ['Spinat', 23, 2.5, 1, 0.4, 'g', []],
+  ['Salat (Eisberg)', 14, 1, 1.6, 0.2, 'g', []],
+  ['Erdbeeren', 33, 0.7, 6, 0.4, 'g', []],
+  ['Weintrauben', 70, 0.7, 16, 0.3, 'g', []],
+  ['Orange', 47, 1, 9, 0.2, 'g', [['1 Stück', 150]]],
+  ['Orangensaft', 45, 0.7, 9, 0.2, 'ml', [['1 Glas', 250]]],
+  ['Cola', 42, 0, 10.6, 0, 'ml', [['1 Dose', 330], ['1 Flasche', 500]]],
+  ['Cola Zero', 0.3, 0, 0, 0, 'ml', [['1 Dose', 330]]],
+  ['Bier (Pils)', 42, 0.5, 3, 0, 'ml', [['1 Flasche', 500], ['1 Glas', 300]]],
+  ['Rotwein', 85, 0.1, 2.5, 0, 'ml', [['1 Glas', 200]]],
+  ['Honig', 305, 0.4, 76, 0, 'g', [['1 TL', 8]]],
+  ['Zucker', 400, 0, 100, 0, 'g', [['1 TL', 5]]],
+  ['Nuss-Nougat-Creme', 540, 6, 57, 31, 'g', [['1 Portion', 15]]],
+  ['Vollmilchschokolade', 535, 7.5, 56, 31, 'g', [['1 Riegel/Reihe', 25]]],
+  ['Gummibärchen', 345, 7, 77, 0.2, 'g', [['1 Handvoll', 30]]],
+  ['Kartoffelchips', 535, 6, 50, 34, 'g', [['1 Handvoll', 25]]],
+  ['Eiscreme (Vanille)', 200, 3.5, 24, 10, 'g', [['1 Kugel', 60]]],
+  ['Proteinriegel', 360, 33, 35, 12, 'g', [['1 Riegel', 60]]],
+  ['Ketchup', 105, 1.5, 23, 0.2, 'g', [['1 EL', 15]]],
+  ['Mayonnaise', 680, 1.5, 1.5, 75, 'g', [['1 EL', 15]]],
+  ['Pesto Basilikum', 480, 5, 6, 48, 'g', [['1 EL', 15]]],
+  ['Rapsöl', 884, 0, 0, 100, 'ml', [['1 EL', 10]]],
+  ['Weizenmehl Type 405', 345, 10, 72, 1, 'g', []],
 ];
 
-function defaults() {
-  const exercises = EXERCISES.map(([name, muscle, equipment]) => ({ id: uid(), name, muscle, equipment, note: '', rest: null }));
-  const ex = (n) => exercises.find((e) => e.name === n).id;
+function defaults({ seed = false } = {}) {
+  const exercises = !seed ? [] : EXERCISES.map(([name, muscle, equipment]) => ({ id: uid(), name, muscle, equipment, note: '', rest: null }));
+  const ex = (n) => exercises.find((e) => e.name === n)?.id;
   const item = (n, sets = 3, reps = '8–12') => ({ exerciseId: ex(n), sets, reps, rest: null });
   return {
     version: 1,
@@ -82,7 +149,7 @@ function defaults() {
       schedule: { start: todayKey(), slots: [] },
     },
     exercises,
-    workoutDays: [
+    workoutDays: !seed ? [] : [
       { id: uid(), name: 'Push', items: [item('Bankdrücken'), item('Schrägbankdrücken (KH)'), item('Schulterdrücken (KH)'), item('Seitheben', 3, '12–15'), item('Trizepsdrücken am Kabel')] },
       { id: uid(), name: 'Pull', items: [item('Klimmzüge'), item('Langhantelrudern'), item('Latzug'), item('Face Pulls', 3, '12–15'), item('Bizepscurls (KH)')] },
       { id: uid(), name: 'Beine', items: [item('Kniebeuge', 3, '6–10'), item('Rumänisches Kreuzheben'), item('Beinpresse'), item('Beinbeuger'), item('Wadenheben', 3, '10–15')] },
@@ -107,14 +174,6 @@ function defaults() {
   };
 }
 
-function load() {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) return migrate(JSON.parse(raw));
-  } catch (e) { console.warn('Laden fehlgeschlagen', e); }
-  return defaults();
-}
-
 function migrate(s) {
   const d = defaults();
   for (const k of Object.keys(d)) if (s[k] === undefined) s[k] = d[k];
@@ -136,32 +195,58 @@ function migrate(s) {
   return s;
 }
 
-export let state = load();
+export let state = defaults();
 let storageOk = true;
+let persistHook = null;
+/** Wird nach jedem lokalen Speichern aufgerufen (Cloud-Sync). */
+export const setPersistHook = (fn) => { persistHook = fn; };
+
+/** Daten eines Accounts laden. key = Speicherplatz für diesen Account. */
+export function initStore(accountKey, { adoptLegacy = false } = {}) {
+  KEY = `formkurve-v1:${accountKey}`;
+  let raw = null;
+  try { raw = localStorage.getItem(KEY); } catch {}
+  if (!raw && adoptLegacy) {
+    // Daten aus der Zeit vor den Accounts übernehmen
+    try { raw = localStorage.getItem(LEGACY_KEY); if (raw) localStorage.removeItem(LEGACY_KEY); } catch {}
+  }
+  state = raw ? migrate(JSON.parse(raw)) : defaults();
+  ready = true;
+  persist();
+  listeners.forEach((fn) => fn());
+}
+export const hasLegacyData = () => { try { return !!localStorage.getItem(LEGACY_KEY); } catch { return false; } };
 
 const listeners = new Set();
 export const subscribe = (fn) => listeners.add(fn);
 
 let saveTimer;
 export function save({ silent = false } = {}) {
+  state._modifiedAt = Date.now();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(persist, 150);
   if (!silent) listeners.forEach((fn) => fn());
 }
+let ready = false; // erst nach dem Login speichern
 function persist() {
+  if (!ready) return;
   try { localStorage.setItem(KEY, JSON.stringify(state)); storageOk = true; }
   catch (e) { storageOk = false; console.warn('Speichern fehlgeschlagen', e); }
+  persistHook?.(state);
 }
 export const storageWorks = () => storageOk;
 window.addEventListener('pagehide', persist);
 document.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
 
-export function replaceState(next) {
+export function replaceState(next, { fromCloud = false } = {}) {
   state = migrate(next);
+  if (!fromCloud) state._modifiedAt = Date.now();
   persist();
   listeners.forEach((fn) => fn());
 }
 export function resetAll() { replaceState(defaults()); }
+/** Speicherplatz eines Accounts auf diesem Gerät löschen (nach Abmelden nicht nötig). */
+export const flush = () => { clearTimeout(saveTimer); persist(); };
 
 // ---------- Nachschlagen ----------
 export const exById = (id) => state.exercises.find((e) => e.id === id);
@@ -310,7 +395,7 @@ export function computeTdee(windowDays = state.settings.tdeeWindow) {
 
 // ---------- Beispieldaten ----------
 export function demoData() {
-  const s = defaults();
+  const s = defaults({ seed: true });
   const today = todayKey();
   const N = 150;
   const rnd = mulberry(7);

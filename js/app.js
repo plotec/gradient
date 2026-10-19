@@ -1,8 +1,10 @@
 // Einstieg: Tabs, Rendering, Service Worker.
-import { state, subscribe } from './store.js';
-import { icon, onAct, redrawSheets, unlockAudio, closeAllSheets } from './ui.js';
+import { state, subscribe, initStore, setPersistHook } from './store.js';
+import { icon, onAct, redrawSheets, unlockAudio, closeAllSheets, toast } from './ui.js';
+import { currentSession, pullAndMerge, schedulePush } from './cloud.js';
+import { showLogin } from './auth.js';
 import { renderTraining, openWorkout } from './training.js';
-import { renderNutrition, openAddFood, setNutDate } from './nutrition.js';
+import { renderNutrition, openAddFood, setNutDate, voiceForMeal } from './nutrition.js';
 import { renderBody, resetBodyDate } from './body.js';
 import { todayKey } from './utils.js';
 import { renderDashboard, applyTheme } from './dashboard.js';
@@ -39,6 +41,7 @@ function quickAdd() {
   wrap.className = 'dialog-wrap bottom';
   const aw = state.activeWorkout;
   const items = [
+    ['voice', 'Essen per Sprache eintragen', 'mic', 'var(--on-accent)', 'var(--accent)'],
     ['train', aw ? 'Training fortsetzen' : 'Training starten', 'dumbbell', 'var(--accent)', 'var(--accent-soft)'],
     ['food', 'Essen eintragen', 'food', 'var(--amber)', 'var(--amber-soft)'],
     ['weight', 'Gewicht eintragen', 'scale', 'var(--body)', 'var(--body-soft)'],
@@ -46,7 +49,7 @@ function quickAdd() {
   ];
   wrap.innerHTML = `<div class="dialog" role="dialog" aria-label="Schnell hinzufügen">
     <h3>Hinzufügen</h3>
-    <div class="action-grid">${items.map(([k, l, ic, c, bg]) => `<button data-k="${k}"><span class="ai" style="background:${bg};color:${c}">${icon(ic)}</span>${l}</button>`).join('')}</div>
+    <div class="action-grid">${items.map(([k, l, ic, c, bg]) => `<button data-k="${k}" ${k === 'voice' ? 'style="grid-column:span 2;flex-direction:row;align-items:center"' : ''}><span class="ai" style="background:${bg};color:${c}">${icon(ic)}</span>${l}</button>`).join('')}</div>
     <button class="btn ghost block" data-k="">Abbrechen</button></div>`;
   wrap.addEventListener('click', (e) => {
     const b = e.target.closest('[data-k]');
@@ -55,13 +58,13 @@ function quickAdd() {
     wrap.remove();
     const k = b?.dataset.k;
     if (k === 'train') { goto('training'); if (state.activeWorkout) openWorkout(); }
-    if (k === 'food') {
+    if (k === 'food' || k === 'voice') {
       goto('nutrition');
       setNutDate(todayKey());
       render();
       const h = new Date().getHours() + new Date().getMinutes() / 60;
-      const meal = h < 10.5 ? 0 : h < 14.5 ? 1 : h < 17.5 ? 2 : h < 21.5 ? 3 : 4;
-      openAddFood({ meal: Math.min(meal, state.settings.mealNames.length - 1) });
+      const meal = Math.min(h < 10.5 ? 0 : h < 14.5 ? 1 : h < 17.5 ? 2 : h < 21.5 ? 3 : 4, state.settings.mealNames.length - 1);
+      if (k === 'voice') voiceForMeal(meal); else openAddFood({ meal });
     }
     if (k === 'weight' || k === 'habits') {
       resetBodyDate();
@@ -112,9 +115,19 @@ document.addEventListener('visibilitychange', () => {
   render();
 });
 
-applyTheme();
-render();
-if (state.activeWorkout && tab === 'training') openWorkout();
+function start(session, { adoptLegacy = false } = {}) {
+  initStore(session.userId, { adoptLegacy });
+  setPersistHook(() => schedulePush());
+  applyTheme();
+  render();
+  if (state.activeWorkout && tab === 'training') openWorkout();
+  if (session.mode === 'cloud') pullAndMerge();
+  if (adoptLegacy) toast('Deine bisherigen Daten wurden in den Account übernommen', 3500);
+}
+
+const session = currentSession();
+if (session) start(session);
+else showLogin((s, opts) => { tab = 'dashboard'; start(s, opts); });
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});

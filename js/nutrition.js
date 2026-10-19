@@ -4,9 +4,13 @@ import { uid, esc, fmt, fmtMax, parseNum, todayKey, addDays, fmtDay, round } fro
 import { icon, onAct, onInput, onChange, openSheet, closeSheet, topSheet, redrawSheet, confirmDialog, menuDialog, toast } from './ui.js';
 import { ring } from './charts.js';
 import { nutritionCheck } from './success.js';
+import { loadBls, searchBls, blsCount } from './foods-db.js';
+import { openVoice } from './voice.js';
 
 let nutDate = todayKey();
 export const setNutDate = (k) => { nutDate = k; };
+export const getNutDate = () => nutDate;
+export const voiceForMeal = (meal) => openVoice({ meal, getDate: () => nutDate });
 
 const spec = (id) => { const t = topSheet(); return t && t.id === id ? t : null; };
 const mealName = (i) => state.settings.mealNames[i] ?? `Mahlzeit ${i + 1}`;
@@ -22,7 +26,8 @@ export function renderNutrition() {
   const left = g.kcal - t.kcal;
   return `
     <div class="page-head"><div><h1>Ernährung</h1><div class="sub">Tagebuch</div></div>
-      <button class="icon-btn" data-act="nut-goals" aria-label="Ziele">${icon('gear')}</button></div>
+      <div class="row" style="gap:8px"><button class="icon-btn" data-act="voice-nut" aria-label="Per Sprache eintragen" style="background:var(--accent);color:var(--on-accent)">${icon('mic')}</button>
+      <button class="icon-btn" data-act="nut-goals" aria-label="Ziele">${icon('gear')}</button></div></div>
     <div class="date-nav">
       <button class="icon-btn" data-act="nut-day" data-d="-1" aria-label="Vorheriger Tag">${icon('left')}</button>
       <label class="lbl" style="position:relative">${fmtDay(nutDate, { long: true })}
@@ -148,6 +153,7 @@ function entryAsFood(e) {
 export function openAddFood(opts) {
   const ui = { tab: 'recent', q: '', online: [], onlineState: 'idle', onlineQ: '' };
   const picking = !!opts.pick;
+  loadBls().then((n) => { if (n) refreshAfList(); });
   const tabs = [['recent', 'Zuletzt'], ['mine', 'Lebensmittel'], ...(picking ? [] : [['meals', 'Mahlzeiten']]), ['online', 'Online']];
   openSheet({
     id: 'add-food',
@@ -159,10 +165,11 @@ export function openAddFood(opts) {
           <div class="tabs-line">${tabs.map(([k, l]) => `<button class="${ui.tab === k ? 'on' : ''}" data-act="af-tab" data-k="${k}">${l}</button>`).join('')}</div>
         </div>`,
       body: `
-        ${ui.tab !== 'meals' ? `<div class="quick-row">
+        ${ui.tab !== 'meals' ? `<div class="quick-row" style="grid-template-columns:repeat(${picking ? 2 : 4},1fr)">
+          ${picking ? '' : `<button class="btn" data-act="voice-af">${icon('mic')}Sprechen</button>`}
           <button class="btn" data-act="scan-open">${icon('barcode')}Barcode</button>
-          <button class="btn" data-act="food-new">${icon('plus')}Neues Lebensmittel</button>
-          ${picking ? '<span></span>' : `<button class="btn" data-act="quick-open">${icon('bolt')}Schnelleintrag</button>`}
+          <button class="btn" data-act="food-new">${icon('plus')}Neu</button>
+          ${picking ? '' : `<button class="btn" data-act="quick-open">${icon('bolt')}Schnell</button>`}
         </div>` : `<button class="btn block" data-act="meal-new">${icon('plus')}Neue Mahlzeit zusammenstellen</button>`}
         <div class="list" id="af-list">${addFoodList(ui)}</div>`,
     }),
@@ -183,11 +190,11 @@ function addFoodList(ui) {
     const list = state.recentFoods.map(foodById).filter(Boolean).filter(match);
     if (!list.length && !q) return '<div class="empty">Hier erscheinen die zuletzt verwendeten Lebensmittel.</div>';
     const rest = q ? state.foods.filter((f) => match(f) && !list.includes(f)) : [];
-    return list.map((f) => foodRow(f)).join('') + rest.slice(0, 40).map((f) => foodRow(f)).join('') || noMatch(ui);
+    return (list.map((f) => foodRow(f)).join('') + rest.slice(0, 40).map((f) => foodRow(f)).join('') + blsRows(ui)) || noMatch(ui);
   }
   if (ui.tab === 'mine') {
     const list = state.foods.filter(match).sort((a, b) => a.name.localeCompare(b.name, 'de'));
-    return list.map((f) => foodRow(f)).join('') || noMatch(ui);
+    return (list.map((f) => foodRow(f)).join('') + blsRows(ui)) || noMatch(ui);
   }
   if (ui.tab === 'meals') {
     const list = state.meals.filter((m) => !q || m.name.toLowerCase().includes(q));
@@ -211,6 +218,15 @@ function addFoodList(ui) {
     <div class="grow"><div class="t ellipsis">${esc(f.name)}</div><div class="s ellipsis">${f.brand ? `${esc(f.brand)} · ` : ''}${fmt(f.kcal)} kcal / 100 ${unitLbl(f.unit)} · E ${fmtMax(f.protein, 1)} K ${fmtMax(f.carbs, 1)} F ${fmtMax(f.fat, 1)}</div></div>
     <span class="icon-btn sm" style="background:var(--food-soft);color:var(--food)">${icon('plus')}</span></button>`).join('');
 }
+function blsRows(ui) {
+  const q = ui.q.trim();
+  ui.bls = q.length >= 2 ? searchBls(q, 40).filter((f) => !state.foods.some((x) => x.blsCode === f.blsCode)) : [];
+  if (!ui.bls.length) return '';
+  return `<div class="list-sec">Lebensmitteldatenbank (BLS)</div>` + ui.bls.map((f, i) => `<button class="li" data-act="af-pick-bls" data-i="${i}">
+    <div class="grow"><div class="t ellipsis">${esc(f.name)}</div><div class="s">${fmt(f.kcal)} kcal · E ${fmtMax(f.protein, 1)} K ${fmtMax(f.carbs, 1)} F ${fmtMax(f.fat, 1)} je 100 g</div></div>
+    <span class="icon-btn sm" style="background:var(--food-soft);color:var(--food)">${icon('plus')}</span></button>`).join('');
+}
+
 function noMatch(ui) {
   return `<div class="empty">Nichts gefunden.${ui.tab !== 'online' ? '<br><button class="link" data-act="af-tab" data-k="online">Online suchen</button> oder ' : '<br>'}<button class="link" data-act="food-new">selbst anlegen</button></div>`;
 }
@@ -235,6 +251,16 @@ onAct({
   'af-pick': (el) => {
     const s = spec('add-food'); if (!s) return;
     openAmount({ food: foodById(el.dataset.id), meal: s.opts.meal, pick: s.opts.pick });
+  },
+  'af-pick-bls': (el) => {
+    const s = spec('add-food'); if (!s) return;
+    openAmount({ food: s.ui.bls[+el.dataset.i], meal: s.opts.meal, pick: s.opts.pick });
+  },
+  'voice-af': () => { const s = spec('add-food'); const meal = s?.opts.meal ?? 0; if (s) closeSheet(s); openVoice({ meal, getDate: () => nutDate }); },
+  'voice-nut': () => {
+    const h = new Date().getHours() + new Date().getMinutes() / 60;
+    const meal = Math.min(h < 10.5 ? 0 : h < 14.5 ? 1 : h < 17.5 ? 2 : h < 21.5 ? 3 : 4, state.settings.mealNames.length - 1);
+    openVoice({ meal, getDate: () => nutDate });
   },
   'af-pick-online': (el) => {
     const s = spec('add-food'); if (!s) return;
@@ -460,7 +486,7 @@ onAct({
     let food = s.food;
     // Online-Produkt beim ersten Verwenden in "Meine Lebensmittel" übernehmen
     if (!food.id) {
-      const existing = food.barcode && state.foods.find((f) => f.barcode === food.barcode);
+      const existing = (food.barcode && state.foods.find((f) => f.barcode === food.barcode)) || (food.blsCode && state.foods.find((f) => f.blsCode === food.blsCode));
       if (existing) food = existing;
       else { food = { ...food, id: uid() }; state.foods.push(food); }
     }
