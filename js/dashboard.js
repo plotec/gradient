@@ -1,5 +1,5 @@
 // Dashboard: Tagesüberblick, Kalorienverbrauch (TDEE), Jahresübersichten, Diagramme. Dazu die Einstellungen.
-import { state, save, dayKcal, latestWeight, weightTrend, workoutDayKeys, computeTdee, totals, dayDiary, replaceState, resetAll, demoData, storageWorks } from './store.js';
+import { state, save, dayKcal, latestWeight, weightTrend, workoutDayKeys, strengthIndex, computeTdee, totals, dayDiary, replaceState, resetAll, demoData, storageWorks } from './store.js';
 import { esc, fmt, fmtMax, signed, todayKey, addDays, parseKey, dayKey, MONTHS, fmtShort, sum } from './utils.js';
 import { icon, onAct, onChange, openSheet, closeSheet, topSheet, redrawSheet, confirmDialog, toast } from './ui.js';
 import { lineChart, barChart } from './charts.js';
@@ -129,6 +129,8 @@ export function renderDashboard() {
       ${lineChart({ series: weightSeries, height: 150, yRight: true, xLabels })}
     </div>
 
+    ${strengthCard(P, keys[0])}
+
     <div class="duo">
       <div class="card streak" style="gap:6px">
         <div class="metric"><span class="lbl">Serie</span><span class="v">${streak}<small>${streak === 1 ? 'Tag' : 'Tage'}</small></span><span class="small muted">${streak ? 'Weiter so!' : 'Starte heute'}</span></div>
@@ -181,6 +183,33 @@ export function renderDashboard() {
     ${tdeeCard()}
 
     ${successCard()}`;
+}
+
+function strengthCard(P, from) {
+  const all = strengthIndex();
+  const counted = all.filter((w) => w.sessions > 0).length;
+  if (counted < 2) {
+    return `<div class="card"><div class="metric"><span class="lbl">Kraftentwicklung</span></div>
+      <div class="small muted">Sobald du Übungen mindestens zweimal trainiert hast, siehst du hier, ob du insgesamt stärker wirst. Grundlage ist das geschätzte 10RM aller Übungen.</div></div>`;
+  }
+  // mindestens 8 Wochen zeigen, sonst wirkt die Kurve zappelig
+  const start = from < addDays(todayKey(), -56) ? from : addDays(todayKey(), -56);
+  const pts = all.filter((w) => w.key >= start);
+  const base = [...all].reverse().find((w) => w.key <= from) || all[0];
+  const lastV = all[all.length - 1].value;
+  const pct = (lastV / base.value - 1) * 100;
+  const total = (lastV / 100 - 1) * 100;
+  const n = new Set(state.workouts.flatMap((w) => w.exercises.map((e) => e.exerciseId))).size;
+  return `<div class="card">
+    <div class="row between" style="align-items:flex-start">
+      <div class="metric"><span class="lbl">Kraftentwicklung</span><span class="v">${signed(total, 1)}<small>% seit Start</small></span></div>
+      <div class="delta"><span class="chip ${pct >= 0 ? 'good' : 'bad'}">${icon(pct >= 0 ? 'arrowUp' : 'arrowDown')}${fmtMax(Math.abs(pct), 1)} %</span><span class="vs">vs. ${P.vs}</span></div>
+    </div>
+    ${lineChart({ series: [
+      { points: pts.map((w) => ({ x: parseKey(w.key).getTime(), y: w.value })), color: 'var(--accent)', width: 2.5, endDot: true, area: true },
+    ], height: 140, yRight: true, yDigits: 0 })}
+    <div class="small muted">Kraftindex (Start = 100) über ${n} Übungen, Wochenschnitt. Steigt die Kurve, wirst du stärker.</div>
+  </div>`;
 }
 
 function flameRing(frac) {

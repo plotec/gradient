@@ -33,6 +33,7 @@ const P = {
   trend: '<path d="M3 17l6-6 4 4 8-8M15 7h6v6"/>',
   download: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
   upload: '<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>',
+  pin: '<path d="M9 4h6l-1 6 3 3H7l3-3-1-6zM12 13v8"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   arrowDown: '<path d="M12 5v14M6 13l6 6 6-6"/>',

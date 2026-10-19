@@ -1,5 +1,5 @@
 // Bereich Ernährung: Tagebuch mit Mahlzeiten, Lebensmittel-Datenbank, eigene Mahlzeiten, Barcode, Online-Suche.
-import { state, save, dayDiary, ensureDiary, entryNut, totals, foodById, makeEntry, touchRecent, mealTotals, foodPer100 } from './store.js';
+import { state, save, latestWeight, dayDiary, ensureDiary, entryNut, totals, foodById, makeEntry, touchRecent, mealTotals, foodPer100 } from './store.js';
 import { uid, esc, fmt, fmtMax, parseNum, todayKey, addDays, fmtDay, round } from './utils.js';
 import { icon, onAct, onInput, onChange, openSheet, closeSheet, topSheet, redrawSheet, confirmDialog, menuDialog, toast } from './ui.js';
 import { ring } from './charts.js';
@@ -741,20 +741,67 @@ onAct({
 // =====================================================================
 // Ziele
 // =====================================================================
+// ---------- Makro-Rechner: Kalorien fest, Ausgleich immer über Kohlenhydrate ----------
+const MACROS = [
+  ['protein', 'Eiweiß', 4, 'var(--protein)'],
+  ['carbs', 'Kohlenhydrate', 4, 'var(--carbs)'],
+  ['fat', 'Fett', 9, 'var(--fat)'],
+];
+let goalDraft = null;
+
+/** Kohlenhydrate füllen, was Kalorien minus Eiweiß und Fett übrig lassen. */
+function fillCarbs(d) {
+  d.carbs = Math.max(0, Math.round((d.kcal - d.protein * 4 - d.fat * 9) / 4));
+}
+/** Änderung eines Werts; die Kohlenhydrate gleichen aus (bei Kohlenhydraten: Eiweiß und Fett anteilig). */
+export function adjustMacro(d, key, value) {
+  value = Math.max(0, Math.round(value || 0));
+  if (key === 'kcal') { d.kcal = value; fillCarbs(d); return d; }
+  if (key === 'carbs') {
+    d.carbs = Math.min(value, Math.floor(d.kcal / 4));
+    const rest = d.kcal - d.carbs * 4;
+    const pf = d.protein * 4 + d.fat * 9;
+    const f = pf > 0 ? rest / pf : 0;
+    d.protein = Math.max(0, Math.round(d.protein * f));
+    d.fat = Math.max(0, Math.round(d.fat * f));
+    fillCarbs(d);
+    return d;
+  }
+  const other = key === 'protein' ? d.fat * 9 : d.protein * 4;
+  const per = key === 'protein' ? 4 : 9;
+  d[key] = Math.min(value, Math.floor((d.kcal - other) / per)); // höchstens so viel, dass KH bei 0 landen
+  fillCarbs(d);
+  return d;
+}
+
 export function openGoals() {
-  const g = state.settings.goals;
+  goalDraft = { ...state.settings.goals };
+  fillCarbs(goalDraft);
   openSheet({
     id: 'goals',
     render: () => ({
       title: 'Ernährungsziele',
       body: `<form class="stack" id="goals-form" data-submit="goals-save">
-        <label class="field"><span>Kalorienziel (kcal pro Tag)</span><input class="input" name="kcal" inputmode="numeric" value="${g.kcal}" data-in="goals-calc"></label>
-        <div class="grid2" style="grid-template-columns:repeat(3,1fr)">
-          <label class="field"><span>Eiweiß g</span><input class="input" name="protein" inputmode="numeric" value="${g.protein}" data-in="goals-calc"></label>
-          <label class="field"><span>Kohlenh. g</span><input class="input" name="carbs" inputmode="numeric" value="${g.carbs}" data-in="goals-calc"></label>
-          <label class="field"><span>Fett g</span><input class="input" name="fat" inputmode="numeric" value="${g.fat}" data-in="goals-calc"></label>
+        <div class="card">
+          <label class="field"><span>Kalorien pro Tag</span>
+            <div class="row"><input class="input kcal-in" id="gl-kcal" inputmode="numeric" value="${goalDraft.kcal}" data-in="gl-in" data-k="kcal" autocomplete="off"><span class="muted">kcal</span></div></label>
+          <div class="macro-bar" id="gl-bar"></div>
+          ${MACROS.map(([k, label, per, color]) => `
+            <div class="macro-row">
+              <div class="row between"><span class="row" style="gap:8px"><i class="dot" style="background:${color}"></i>${label}${k === 'carbs' ? ' <span class="tiny faint">gleicht aus</span>' : ''}</span>
+                <span class="small muted num" id="gl-info-${k}"></span></div>
+              <div class="row" style="gap:6px">
+                <button type="button" class="icon-btn sm" data-act="gl-step" data-k="${k}" data-d="-5" aria-label="${label} weniger">${icon('minus')}</button>
+                <input type="range" class="grow" id="gl-range-${k}" min="0" max="${Math.ceil(goalDraft.kcal / per)}" step="1" value="${goalDraft[k]}" data-in="gl-in" data-k="${k}" style="accent-color:${color}" aria-label="${label}">
+                <button type="button" class="icon-btn sm" data-act="gl-step" data-k="${k}" data-d="5" aria-label="${label} mehr">${icon('plus')}</button>
+                <input class="input macro-g" id="gl-${k}" inputmode="numeric" value="${goalDraft[k]}" data-in="gl-in" data-k="${k}" autocomplete="off" aria-label="${label} in Gramm"><span class="small muted">g</span>
+              </div>
+            </div>`).join('')}
+          <div class="row between wrap" style="gap:8px">
+            <span class="tiny faint">Eiweiß und Kohlenhydrate 4 kcal/g, Fett 9 kcal/g</span>
+            <button type="button" class="link small" data-act="gl-suggest">Vorschlag nach Körpergewicht</button>
+          </div>
         </div>
-        <div class="small muted" id="goals-hint"></div>
         <h2 class="sec">Zielbereich</h2>
         <div class="small muted">Für die Erfolgskästchen zählt ein Tag als geschafft, wenn die gewählten Werte innerhalb der Abweichung liegen.</div>
         <label class="field"><span>Erlaubte Abweichung</span><select class="input" name="tol">${[5, 10, 15, 20, 25, 30].map((v) => `<option value="${v}" ${state.settings.nutritionTolerance === v ? 'selected' : ''}>± ${v} %</option>`).join('')}</select></label>
@@ -764,25 +811,52 @@ export function openGoals() {
       </form>`,
       foot: `<button class="btn food block lg" data-act="goals-save">${icon('check')}Speichern</button>`,
     }),
-    afterRender: () => goalsHint(),
+    afterRender: () => paintGoals(null),
   });
 }
-function goalsHint() {
-  const f = document.getElementById('goals-form'); if (!f) return;
-  const fd = new FormData(f);
-  const p = parseNum(fd.get('protein')) || 0, c = parseNum(fd.get('carbs')) || 0, fa = parseNum(fd.get('fat')) || 0;
-  const k = p * 4 + c * 4 + fa * 9;
-  const goal = parseNum(fd.get('kcal')) || 0;
-  document.getElementById('goals-hint').textContent = `Makros ergeben ${fmt(k)} kcal (${goal ? signed0(k - goal) : '–'} zum Ziel). Eiweiß und Kohlenhydrate 4 kcal/g, Fett 9 kcal/g.`;
+
+/** Alle Anzeigen aktualisieren, ohne das gerade bearbeitete Feld zu überschreiben. */
+function paintGoals(activeEl) {
+  const d = goalDraft;
+  if (!d || !document.getElementById('gl-bar')) return;
+  const kc = { protein: d.protein * 4, carbs: d.carbs * 4, fat: d.fat * 9 };
+  const total = d.kcal || 1;
+  document.getElementById('gl-bar').innerHTML = MACROS.map(([k, , , color]) => `<i style="width:${(kc[k] / total) * 100}%;background:${color}"></i>`).join('');
+  for (const [k, , per] of MACROS) {
+    const num = document.getElementById(`gl-${k}`), rng = document.getElementById(`gl-range-${k}`);
+    if (num !== activeEl) num.value = d[k];
+    rng.max = Math.max(1, Math.ceil(d.kcal / per));
+    if (rng !== activeEl) rng.value = d[k];
+    document.getElementById(`gl-info-${k}`).textContent = `${fmt(kc[k])} kcal · ${Math.round((kc[k] / total) * 100)} %`;
+  }
+  const kin = document.getElementById('gl-kcal');
+  if (kin !== activeEl) kin.value = d.kcal;
 }
-const signed0 = (n) => (n > 0 ? `+${fmt(n)}` : fmt(n));
-onInput({ 'goals-calc': () => goalsHint() });
+onInput({
+  'gl-in': (el) => {
+    if (!goalDraft) return;
+    const v = parseNum(el.value);
+    if (v == null) return; // leeres Feld beim Tippen zulassen
+    adjustMacro(goalDraft, el.dataset.k, v);
+    paintGoals(el.type === 'range' ? null : el);
+  },
+});
+onAct({
+  'gl-step': (el) => { adjustMacro(goalDraft, el.dataset.k, goalDraft[el.dataset.k] + +el.dataset.d); paintGoals(null); },
+  'gl-suggest': () => {
+    const w = latestWeight()?.trend || 80;
+    goalDraft.protein = Math.round(w * 2);       // 2 g Eiweiß je kg
+    goalDraft.fat = Math.round((goalDraft.kcal * 0.25) / 9); // 25 % aus Fett
+    adjustMacro(goalDraft, 'protein', goalDraft.protein);
+    paintGoals(null);
+    toast(`Eiweiß 2 g/kg (${fmtMax(w, 1)} kg), Fett 25 %, Rest Kohlenhydrate`);
+  },
+});
 onAct({
   'nut-goals': () => openGoals(),
   'goals-save': () => {
     const fd = new FormData(document.getElementById('goals-form'));
-    const g = state.settings.goals;
-    for (const k of ['kcal', 'protein', 'carbs', 'fat']) { const v = parseNum(fd.get(k)); if (v != null && v >= 0) g[k] = Math.round(v); }
+    Object.assign(state.settings.goals, goalDraft);
     state.settings.nutritionTolerance = +fd.get('tol') || 15;
     for (const k of ['kcal', 'protein', 'carbs', 'fat']) state.settings.nutritionChecks[k] = fd.get(`chk-${k}`) === 'on';
     state.settings.mealNames = state.settings.mealNames.map((n, i) => String(fd.get(`meal${i}`) || '').trim() || n);

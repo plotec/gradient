@@ -1,5 +1,5 @@
 // Bereich Training: Trainingstage, Übungen, laufendes Training, Zusammenfassung, Verlauf.
-import { state, save, exById, dayById, exerciseHistory, bestE10, lastSetsFor, setVolume } from './store.js';
+import { state, save, exById, dayById, exerciseHistory, bestE10, lastSetsFor, lastSessionFor, sessionStrength, setVolume } from './store.js';
 import { uid, esc, fmt, fmtMax, signed, parseNum, e10rm, round, fmtClock, fmtDuration, fmtDay, dayKey, sum, MONTHS, todayKey, addDays, parseKey, daysBetween } from './utils.js';
 import { icon, onAct, onInput, onChange, openSheet, closeSheet, confirmDialog, menuDialog, toast, beep, sheetOpen, topSheet } from './ui.js';
 import { lineChart } from './charts.js';
@@ -398,7 +398,7 @@ function openExerciseEditor(id, onSaved, presetName = '') {
           <label class="field"><span>Gruppe (optional, z. B. Brust oder Torso)</span><input class="input" name="muscle" value="${esc(draft.muscle || '')}" list="ex-groups" autocomplete="off">
             <datalist id="ex-groups">${[...new Set(state.exercises.map((e) => e.muscle).filter(Boolean))].map((m) => `<option value="${esc(m)}">`).join('')}</datalist></label>
           <label class="field"><span>Standard-Pause</span><select class="input" name="rest"><option value="">Wie in Einstellungen (${restLabel(state.settings.restDefault)})</option>${restOptions.map((s) => `<option value="${s}" ${draft.rest === s ? 'selected' : ''}>${restLabel(s)}</option>`).join('')}</select></label>
-          <label class="field"><span>Notiz (Einstellungen, Technik …)</span><textarea class="input" name="note" placeholder="z. B. Sitz Stufe 4, Griff eng">${esc(draft.note)}</textarea></label>
+          <label class="field"><span>Angepinnte Notiz (wird im Training immer angezeigt)</span><textarea class="input" name="note" placeholder="z. B. Sitz Stufe 4, Griff eng">${esc(draft.note)}</textarea></label>
         </form>
         ${ex ? `<button class="btn danger block" data-act="ex-delete" data-id="${ex.id}">${icon('trash')}Übung löschen</button>` : ''}`,
       foot: `<button class="btn primary block lg" data-act="ex-save">${icon('check')}Speichern</button>`,
@@ -515,33 +515,54 @@ export function openWorkout() {
     id: 'workout',
     render: renderWorkout,
     afterRender: (s, first) => {
-      if (first || s.scrollToCurrent) {
+      setupTimelineDrag(s);
+      const cur = s.el.querySelector('.tl-tile.current');
+      cur?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: first ? 'auto' : 'smooth' });
+      if (s.scrollToCurrent) {
         s.scrollToCurrent = false;
-        const cur = s.el.querySelector('.ex-card.current');
-        if (cur && !first) cur.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        s.el.querySelector('.sheet-body').scrollTo({ top: 0, behavior: 'smooth' });
       }
     },
     onClose: () => { try { wakeLock?.release(); } catch {} wakeLock = null; },
   });
 }
 
+const shortName = (n) => (n.length > 22 ? `${n.slice(0, 21)}…` : n);
+
+function timelineHtml(aw) {
+  return `<div class="tl" id="wo-tl"><div class="tl-track">
+    ${aw.exercises.map((ex, i) => {
+      const done = ex.sets.filter((s) => s.done).length;
+      const complete = ex.sets.length > 0 && done === ex.sets.length;
+      return `<button class="tl-tile ${aw.current === i ? 'current' : ''} ${complete ? 'done' : ''}" data-act="wo-focus" data-i="${i}" aria-label="${esc(exById(ex.exerciseId)?.name || 'Übung')}">
+        <span class="tl-n">${complete ? icon('check') : i + 1}</span>
+        <span class="tl-name">${esc(shortName(exById(ex.exerciseId)?.name || 'Gelöscht'))}</span>
+        <span class="tl-prog"><i style="width:${ex.sets.length ? (done / ex.sets.length) * 100 : 0}%"></i></span>
+      </button>`;
+    }).join('')}
+    <button class="tl-add" data-act="wo-add-ex" aria-label="Übung hinzufügen">${icon('plus')}</button>
+  </div></div>`;
+}
+
 function renderWorkout() {
   const aw = state.activeWorkout;
   if (!aw) return null;
+  if (aw.current >= aw.exercises.length) aw.current = Math.max(0, aw.exercises.length - 1);
   const rest = aw.restEnd ? restBarHtml(aw) : '';
   const vol = sum(aw.exercises, (e) => sum(e.sets.filter((s) => s.done), setVolume));
   return {
     title: aw.name,
     left: `<button class="icon-btn plain" data-act="sheet-close" aria-label="Minimieren">${icon('down')}</button>`,
     right: `<button class="btn primary sm" data-act="wo-finish">Abschließen</button>`,
-    top: rest,
+    top: `<div class="wo-top">${rest}${timelineHtml(aw)}</div>`,
     body: `
       <div class="row between">
-        <div><div class="tiny muted" style="text-transform:uppercase;letter-spacing:.07em;font-weight:600">Trainingszeit</div><div class="big-num" style="color:var(--train)" data-clock="elapsed">${fmtClock(Date.now() - aw.startedAt)}</div></div>
-        <div style="text-align:right"><div class="mid-num">${doneCount(aw)}/${totalCount(aw)}</div><div class="tiny muted">Sätze · ${fmt(vol)} kg</div></div>
+        <div class="row" style="gap:8px;align-items:baseline"><span class="wo-timer" data-clock="elapsed">${fmtClock(Date.now() - aw.startedAt)}</span><span class="tiny muted">Trainingszeit</span></div>
+        <div class="small muted num">${doneCount(aw)}/${totalCount(aw)} Sätze · ${fmt(vol)} kg</div>
       </div>
-      ${aw.exercises.map((ex, i) => exerciseCard(aw, ex, i)).join('') || '<div class="card flat"><div class="empty">Noch keine Übungen. Füge die erste hinzu.</div></div>'}
-      <button class="btn block" data-act="wo-add-ex">${icon('plus')}Übung hinzufügen</button>
+      ${aw.exercises.length ? exercisePanel(aw, aw.exercises[aw.current], aw.current)
+        : `<div class="card flat"><div class="stack" style="gap:10px;text-align:center;padding:8px"><span class="muted">Noch keine Übungen in diesem Training.</span>
+           <button class="btn primary" data-act="wo-add-ex" style="align-self:center">${icon('plus')}Übung hinzufügen</button></div></div>`}
       <button class="btn ghost danger block" data-act="wo-discard">Training verwerfen</button>`,
   };
 }
@@ -560,44 +581,175 @@ function restBarHtml(aw) {
   </div>`;
 }
 
-function exerciseCard(aw, ex, i) {
-  const meta = exById(ex.exerciseId);
-  const done = ex.sets.filter((s) => s.done).length;
-  const complete = ex.sets.length > 0 && done === ex.sets.length;
-  const current = aw.current === i;
-  const last = lastSetsFor(ex.exerciseId);
-  const cls = `ex-card ${current ? 'current' : ''} ${complete ? 'complete' : ''}`;
-  const head = `<button class="ex-top" data-act="wo-focus" data-i="${i}">
-      <span class="badge">${complete ? icon('check') : i + 1}</span>
-      <div class="grow"><div class="t ellipsis" style="font-weight:600">${esc(meta?.name || 'Gelöschte Übung')}</div>
-        <div class="tiny muted">${done}/${ex.sets.length} Sätze${ex.target ? ` · Ziel ${esc(ex.target)} Wdh` : ''}</div></div>
-      ${current ? '' : `<span class="small muted num">${ex.sets.filter((s) => s.done).map((s) => `${fmtMax(s.weight || 0, 2)}×${s.reps}`).join(' ')}</span>`}
-    </button>`;
-  if (!current) return `<div class="${cls}">${head}</div>`;
-  const firstOpen = ex.sets.findIndex((s) => !s.done);
-  return `<div class="${cls}" id="ex-card-${i}">${head}
-    <div class="ex-body">
-      ${last ? `<div class="last-time">${icon('history', '')} Letztes Mal: <span class="num">${last.map((s) => `${fmtMax(s.weight || 0, 2)} kg × ${s.reps}`).join(' · ')}</span></div>` : ''}
-      ${meta?.note ? `<div class="last-time">${esc(meta.note)}</div>` : ''}
-      <div class="sets">
-        <span class="hd">#</span><span class="hd">kg</span><span class="hd">Wdh</span><span class="hd">10RM</span><span class="hd">Q</span><span class="hd">${icon('check')}</span>
-        ${ex.sets.map((s, j) => `<div class="sr ${s.done ? 'row-done' : ''} ${j === firstOpen ? 'active-row' : ''}">
-          <span class="n">${j + 1}</span>
-          <input id="w-${i}-${j}" type="text" inputmode="decimal" enterkeyhint="next" value="${s.weight == null ? '' : String(s.weight).replace('.', ',')}" placeholder="kg" data-in="set-w" data-i="${i}" data-j="${j}" aria-label="Gewicht Satz ${j + 1}">
-          <input id="r-${i}-${j}" type="text" inputmode="numeric" enterkeyhint="done" value="${s.reps ?? ''}" placeholder="${esc(repPlaceholder(ex.target))}" data-in="set-r" data-i="${i}" data-j="${j}" aria-label="Wiederholungen Satz ${j + 1}">
-          <span class="rm" id="rm-${i}-${j}">${rmHtml(s)}</span>
-          <select data-ch="set-q" data-i="${i}" data-j="${j}" aria-label="Qualität Satz ${j + 1}"><option value="">–</option>${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((q) => `<option ${s.quality === q ? 'selected' : ''}>${q}</option>`).join('')}</select>
-          <button class="chk ${s.done ? 'on' : ''}" data-act="set-check" data-i="${i}" data-j="${j}" aria-label="Satz ${j + 1} abhaken">${icon('check')}</button>
-        </div>`).join('')}
-      </div>
-      <div class="ex-actions">
-        <button class="btn sm" data-act="set-add" data-i="${i}">${icon('plus')}Satz</button>
-        <button class="btn sm" data-act="set-remove" data-i="${i}" ${ex.sets.length <= 1 ? 'disabled style="opacity:.4"' : ''}>${icon('minus')}Satz</button>
-        <span class="grow"></span>
-        <button class="btn sm" data-act="wo-ex-menu" data-i="${i}">${icon('more')}</button>
-      </div>
-    </div></div>`;
+const setsShort = (sets) => sets.map((s) => `${fmtMax(s.weight || 0, 2)}×${s.reps}`).join(' · ');
+
+/** Kraftkurve einer Übung: bisherige Einheiten + heutiger Stand (amber). */
+function exerciseCurve(exId, todaySets) {
+  const hist = exerciseHistory(exId).map((h) => ({ x: h.date, y: sessionStrength(h.sets) })).filter((p) => p.y > 0).slice(-16);
+  const now = todaySets.length ? sessionStrength(todaySets) : 0;
+  const series = [{ points: hist, color: 'var(--accent)', width: 2.2, dots: true, dotR: 2.6, area: true }];
+  if (now > 0) series.push({ points: [...hist.slice(-1), { x: Date.now(), y: now }], color: 'var(--amber)', width: 2, dash: '4 4', endDot: true });
+  const all = [...hist, ...(now > 0 ? [{ y: now }] : [])];
+  if (all.length < 2) return '<div class="tiny faint">Die Kurve erscheint ab dem zweiten Training dieser Übung.</div>';
+  const first = hist[0]?.y || now, last = all[all.length - 1].y;
+  const unit = Math.max(...todaySets.map((x) => x.weight || 0), ...exerciseHistory(exId).flatMap((h) => h.sets.map((x) => x.weight || 0))) > 0 ? 'kg (10RM)' : 'Wdh';
+  return `<div class="row between"><span class="small" style="font-weight:500">Kraftentwicklung</span>
+      <span class="chip ${last >= first ? 'good' : 'bad'}">${signed(((last / first) - 1) * 100, 1)} % seit ${hist.length ? 'Beginn' : 'heute'}</span></div>
+    ${lineChart({ series, height: 110, yRight: true, yDigits: 1 })}
+    <div class="tiny faint">Bestes geschätztes 10RM je Training in ${unit}${now > 0 ? ' · gestrichelt: heute' : ''}</div>`;
 }
+
+function exercisePanel(aw, ex, i) {
+  const meta = exById(ex.exerciseId);
+  const done = ex.sets.filter((s) => s.done);
+  const last = lastSessionFor(ex.exerciseId);
+  const firstOpen = ex.sets.findIndex((s) => !s.done);
+  return `<div class="card ex-panel">
+    <div class="row between" style="align-items:flex-start">
+      <div class="grow">
+        <div class="tiny muted">Übung ${i + 1} von ${aw.exercises.length}${ex.target ? ` · Ziel ${esc(ex.target)} Wdh` : ''}</div>
+        <h3 class="ex-title">${esc(meta?.name || 'Gelöschte Übung')}</h3>
+      </div>
+      <button class="icon-btn" data-act="wo-ex-menu" data-i="${i}" aria-label="Optionen">${icon('more')}</button>
+    </div>
+    ${meta?.note ? `<button class="note pinned" data-act="note-edit" data-kind="pin" data-i="${i}">${icon('pin')}<span>${esc(meta.note)}</span></button>` : ''}
+    ${ex.note ? `<button class="note" data-act="note-edit" data-kind="day" data-i="${i}">${icon('edit')}<span>${esc(ex.note)}</span></button>` : ''}
+    ${last ? `<div class="last-box">
+        <div class="tiny muted">Letztes Mal · ${fmtDay(dayKey(new Date(last.date)))}</div>
+        <div class="num" style="font-weight:500">${setsShort(last.sets)}</div>
+        ${last.note ? `<div class="tiny muted">„${esc(last.note)}“</div>` : ''}
+      </div>` : '<div class="tiny faint">Erstes Mal – trag deine Startwerte ein.</div>'}
+    <div class="sets">
+      <span class="hd">#</span><span class="hd">kg</span><span class="hd">Wdh</span><span class="hd">10RM</span><span class="hd">Q</span><span class="hd">${icon('check')}</span>
+      ${ex.sets.map((s, j) => `<div class="sr ${s.done ? 'row-done' : ''} ${j === firstOpen ? 'active-row' : ''}">
+        <span class="n">${j + 1}</span>
+        <input id="w-${i}-${j}" type="text" inputmode="decimal" enterkeyhint="next" value="${s.weight == null ? '' : String(s.weight).replace('.', ',')}" placeholder="kg" data-in="set-w" data-i="${i}" data-j="${j}" aria-label="Gewicht Satz ${j + 1}">
+        <input id="r-${i}-${j}" type="text" inputmode="numeric" enterkeyhint="done" value="${s.reps ?? ''}" placeholder="${esc(repPlaceholder(ex.target))}" data-in="set-r" data-i="${i}" data-j="${j}" aria-label="Wiederholungen Satz ${j + 1}">
+        <span class="rm" id="rm-${i}-${j}">${rmHtml(s)}</span>
+        <select data-ch="set-q" data-i="${i}" data-j="${j}" aria-label="Qualität Satz ${j + 1}"><option value="">–</option>${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((q) => `<option ${s.quality === q ? 'selected' : ''}>${q}</option>`).join('')}</select>
+        <button class="chk ${s.done ? 'on' : ''}" data-act="set-check" data-i="${i}" data-j="${j}" aria-label="Satz ${j + 1} abhaken">${icon('check')}</button>
+      </div>`).join('')}
+    </div>
+    <div class="ex-actions">
+      <button class="btn sm" data-act="set-add" data-i="${i}">${icon('plus')}Satz</button>
+      <button class="btn sm" data-act="set-remove" data-i="${i}" ${ex.sets.length <= 1 ? 'disabled style="opacity:.4"' : ''}>${icon('minus')}Satz</button>
+      <span class="grow"></span>
+      <button class="icon-btn sm" data-act="wo-focus" data-i="${i - 1}" ${i ? '' : 'disabled style="opacity:.3"'} aria-label="Vorherige Übung">${icon('left')}</button>
+      <button class="icon-btn sm" data-act="wo-focus" data-i="${i + 1}" ${i < aw.exercises.length - 1 ? '' : 'disabled style="opacity:.3"'} aria-label="Nächste Übung">${icon('right')}</button>
+    </div>
+    <div class="divider"></div>
+    ${exerciseCurve(ex.exerciseId, done)}
+  </div>`;
+}
+
+// ---------- Timeline: Übungen per Drag & Drop umsortieren ----------
+function moveExercise(aw, from, to) {
+  if (from === to || to < 0 || to >= aw.exercises.length) return;
+  const cur = aw.exercises[aw.current];
+  const [ex] = aw.exercises.splice(from, 1);
+  aw.exercises.splice(to, 0, ex);
+  aw.current = aw.exercises.indexOf(cur);
+  save();
+}
+
+function setupTimelineDrag(sheet) {
+  const track = sheet.el.querySelector('.tl-track');
+  if (!track || track.dataset.dnd) return;
+  track.dataset.dnd = '1';
+  let drag = null;
+  let swallowClick = false;
+  const tiles = () => [...track.querySelectorAll('.tl-tile')];
+  const reset = () => { tiles().forEach((t) => { t.style.transform = ''; t.classList.remove('dragging', 'shift'); }); };
+  const activate = () => {
+    if (!drag) return;
+    drag.active = true;
+    drag.rects = tiles().map((t) => t.getBoundingClientRect());
+    drag.tile.classList.add('dragging');
+    tiles().forEach((t) => t !== drag.tile && t.classList.add('shift'));
+    try { drag.tile.setPointerCapture(drag.pid); } catch {}
+    try { navigator.vibrate?.(15); } catch {}
+  };
+  track.addEventListener('pointerdown', (e) => {
+    const tile = e.target.closest('.tl-tile');
+    if (!tile || e.button > 0) return;
+    drag = { tile, from: +tile.dataset.i, x0: e.clientX, y0: e.clientY, pid: e.pointerId, mouse: e.pointerType === 'mouse', active: false };
+    if (!drag.mouse) drag.timer = setTimeout(activate, 220); // Touch: kurz halten, dann ziehen
+  });
+  track.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+    if (!drag.active) {
+      if (drag.mouse && Math.abs(dx) > 6) activate();
+      else if (!drag.mouse && Math.hypot(dx, dy) > 10) { clearTimeout(drag.timer); drag = null; return; } // war Scrollen
+      if (!drag?.active) return;
+    }
+    drag.tile.style.transform = `translateX(${dx}px)`;
+    const r = drag.rects;
+    const x = r[drag.from].left + r[drag.from].width / 2 + dx;
+    let to = r.filter((rc, k) => k !== drag.from && rc.left + rc.width / 2 < x).length;
+    drag.to = to;
+    const w = r[drag.from].width + 6;
+    tiles().forEach((t, k) => {
+      if (k === drag.from) return;
+      const shift = drag.from < to && k > drag.from && k <= to ? -w : drag.from > to && k >= to && k < drag.from ? w : 0;
+      t.style.transform = shift ? `translateX(${shift}px)` : '';
+    });
+  });
+  const end = () => {
+    if (!drag) return;
+    clearTimeout(drag.timer);
+    const { active, from, to } = drag;
+    drag = null;
+    if (!active) return;
+    swallowClick = true;
+    setTimeout(() => { swallowClick = false; }, 300);
+    reset();
+    if (to != null && to !== from) moveExercise(state.activeWorkout, from, to);
+  };
+  track.addEventListener('pointerup', end);
+  track.addEventListener('pointercancel', () => { if (drag) { clearTimeout(drag.timer); drag = null; reset(); } });
+  track.addEventListener('touchmove', (e) => { if (drag?.active) e.preventDefault(); }, { passive: false });
+  track.addEventListener('click', (e) => { if (swallowClick) { e.stopPropagation(); e.preventDefault(); } }, true);
+  track.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
+// ---------- Notizen ----------
+function openNoteSheet({ title, hint, value, onSave }) {
+  const sheet = openSheet({
+    id: 'note',
+    render: () => ({
+      title,
+      body: `<div class="small muted">${hint}</div>
+        <textarea class="input" id="note-text" rows="5" placeholder="z. B. Sitz Stufe 4, Griff eng">${esc(value || '')}</textarea>`,
+      foot: `${value ? `<button class="btn danger" data-act="note-save" data-clear="1">${icon('trash')}Löschen</button>` : ''}<button class="btn primary block lg" data-act="note-save">${icon('check')}Speichern</button>`,
+    }),
+    afterRender: (s, first) => { if (first) s.el.querySelector('#note-text').focus(); },
+  });
+  sheet.save = (clear) => { const v = clear ? '' : document.getElementById('note-text').value.trim(); closeSheet(sheet); onSave(v); };
+}
+function editNote(i, kind) {
+  const aw = state.activeWorkout;
+  const ex = aw.exercises[i];
+  const meta = exById(ex.exerciseId);
+  if (kind === 'pin') {
+    openNoteSheet({
+      title: 'Angepinnte Notiz', value: meta?.note,
+      hint: `Wird bei „${esc(meta?.name || '')}“ jedes Mal angezeigt – z. B. Geräteeinstellung oder Technik-Hinweis.`,
+      onSave: (v) => { if (meta) meta.note = v; save(); },
+    });
+  } else {
+    openNoteSheet({
+      title: 'Notiz für heute', value: ex.note,
+      hint: 'Gilt nur für diese Übung in diesem Training und erscheint beim nächsten Mal unter „Letztes Mal“.',
+      onSave: (v) => { ex.note = v; save(); },
+    });
+  }
+}
+onAct({
+  'note-edit': (el) => editNote(+el.dataset.i, el.dataset.kind),
+  'note-save': (el) => { const t = topSheet(); if (t?.id === 'note') t.save(el.dataset.clear === '1'); },
+});
+
 const repPlaceholder = (t) => (t ? String(t).split(/[–-]/)[0].trim() || 'Wdh' : 'Wdh');
 function rmHtml(s) {
   const v = e10(s.weight, s.reps);
@@ -619,7 +771,13 @@ onAct({
     startWorkout(el.dataset.id || null);
   },
   'wo-open': () => { openWorkout(); requestWakeLock(); },
-  'wo-focus': (el) => { state.activeWorkout.current = +el.dataset.i; save(); },
+  'wo-focus': (el) => {
+    const aw = state.activeWorkout, i = +el.dataset.i;
+    if (i < 0 || i >= aw.exercises.length || i === aw.current) return;
+    aw.current = i;
+    const t = findSpec('workout'); if (t) t.scrollToCurrent = true;
+    save();
+  },
   'set-check': (el) => {
     const aw = state.activeWorkout;
     const i = +el.dataset.i, j = +el.dataset.j;
@@ -664,29 +822,33 @@ onAct({
   'wo-ex-menu': async (el) => {
     const aw = state.activeWorkout;
     const i = +el.dataset.i;
+    const ex = aw.exercises[i];
+    const meta = exById(ex.exerciseId);
     const v = await menuDialog({
-      title: exById(aw.exercises[i].exerciseId)?.name,
+      title: meta?.name,
       options: [
-        { label: 'Nach oben', icon: 'up', value: 'up' },
-        { label: 'Nach unten', icon: 'down', value: 'down' },
-        { label: 'Übung tauschen', icon: 'edit', value: 'swap' },
+        { label: 'Übung austauschen', icon: 'edit', value: 'swap' },
+        { label: ex.note ? 'Notiz für heute bearbeiten' : 'Notiz für heute hinzufügen', icon: 'edit', value: 'note' },
+        { label: meta?.note ? 'Angepinnte Notiz bearbeiten' : 'Angepinnte Notiz hinzufügen', icon: 'pin', value: 'pin' },
+        ...(i > 0 ? [{ label: 'Nach links verschieben', icon: 'left', value: 'left' }] : []),
+        ...(i < aw.exercises.length - 1 ? [{ label: 'Nach rechts verschieben', icon: 'right', value: 'right' }] : []),
         { label: 'Verlauf ansehen', icon: 'trend', value: 'hist' },
         { label: 'Aus Training entfernen', icon: 'trash', value: 'del', danger: true },
       ],
     });
-    if (v === 'up' && i > 0) { [aw.exercises[i - 1], aw.exercises[i]] = [aw.exercises[i], aw.exercises[i - 1]]; aw.current = i - 1; }
-    if (v === 'down' && i < aw.exercises.length - 1) { [aw.exercises[i + 1], aw.exercises[i]] = [aw.exercises[i], aw.exercises[i + 1]]; aw.current = i + 1; }
-    if (v === 'del') { aw.exercises.splice(i, 1); aw.current = Math.min(aw.current, aw.exercises.length - 1); }
-    if (v === 'hist') { openExerciseDetail(aw.exercises[i].exerciseId); return; }
+    if (v === 'note') return editNote(i, 'day');
+    if (v === 'pin') return editNote(i, 'pin');
+    if (v === 'left') return moveExercise(aw, i, i - 1);
+    if (v === 'right') return moveExercise(aw, i, i + 1);
+    if (v === 'hist') return openExerciseDetail(ex.exerciseId);
+    if (v === 'del') { aw.exercises.splice(i, 1); aw.current = Math.min(aw.current, Math.max(0, aw.exercises.length - 1)); save(); return; }
     if (v === 'swap') {
       openExercisePicker({ onPick: (id) => {
         const old = aw.exercises[i];
-        aw.exercises[i] = buildExercise(id, old.sets.length, old.target, old.rest);
+        aw.exercises[i] = { ...buildExercise(id, old.sets.length, old.target, old.rest), note: old.note || '' };
         save();
       } });
-      return;
     }
-    save();
   },
   'wo-add-ex': () => {
     const aw = state.activeWorkout;
@@ -778,7 +940,7 @@ async function finishWorkout() {
   if (done === total && !(await confirmDialog({ title: 'Training abschließen?', text: `${done} Sätze in ${fmtClock(Date.now() - aw.startedAt)}.`, ok: 'Abschließen' }))) return;
   const w = {
     id: aw.id, dayId: aw.dayId, name: aw.name, startedAt: aw.startedAt, endedAt: Date.now(),
-    exercises: aw.exercises.map((e) => ({ exerciseId: e.exerciseId, target: e.target, rest: e.rest, sets: e.sets.filter((s) => s.done).map(({ weight, reps, quality }) => ({ weight: weight || 0, reps: reps || 0, quality, done: true })) })).filter((e) => e.sets.length),
+    exercises: aw.exercises.map((e) => ({ exerciseId: e.exerciseId, target: e.target, rest: e.rest, note: e.note || '', sets: e.sets.filter((s) => s.done).map(({ weight, reps, quality }) => ({ weight: weight || 0, reps: reps || 0, quality, done: true })) })).filter((e) => e.sets.length),
   };
   state.workouts.push(w);
   state.activeWorkout = null;
@@ -803,7 +965,7 @@ export function analyzeWorkout(w) {
     const best = bestE10(e.sets, e10);
     const bestSet = e.sets.reduce((a, s) => (e10(s.weight, s.reps) > e10(a.weight, a.reps) ? s : a), e.sets[0]);
     const vol = sum(e.sets, setVolume);
-    const row = { name, best, bestSet, vol, sets: e.sets, delta: null, first: !hist.length };
+    const row = { name, best, bestSet, vol, sets: e.sets, delta: null, first: !hist.length, note: e.note || '' };
     if (hist.length) {
       const lastBest = bestE10(hist[hist.length - 1].sets, e10);
       row.delta = best - lastBest;
@@ -862,7 +1024,7 @@ function openSummary(id, fresh = false) {
           <div class="card" style="padding:4px 14px"><div class="list">
             ${a.exRows.map((r) => `<div class="li">
               <div class="grow"><div class="t ellipsis">${esc(r.name)}</div>
-                <div class="s num">${r.sets.map((s) => `${fmtMax(s.weight, 2)}×${s.reps}${s.quality ? `<sup>${s.quality}</sup>` : ''}`).join(' · ')}</div></div>
+                <div class="s num">${r.sets.map((s) => `${fmtMax(s.weight, 2)}×${s.reps}${s.quality ? `<sup>${s.quality}</sup>` : ''}`).join(' · ')}</div>${r.note ? `<div class="s">„${esc(r.note)}“</div>` : ''}</div>
               <div class="r"><div class="mid-num" style="font-size:17px;color:var(--train)">${fmtMax(r.best, 1)}</div>
                 <div class="tiny ${r.delta > 0.01 ? 'up' : r.delta < -0.01 ? 'down' : 'faint'}">${r.first ? 'neu' : r.delta == null ? '' : `${signed(r.delta, 1)} kg`}</div></div>
             </div>`).join('')}

@@ -1,5 +1,5 @@
 // Datenhaltung: ein JSON-Objekt im localStorage, plus abgeleitete Auswertungen.
-import { uid, todayKey, addDays, sum, linreg, daysBetween, parseKey } from './utils.js';
+import { uid, todayKey, addDays, sum, linreg, daysBetween, parseKey, e10rm, dayKey } from './utils.js';
 
 const LEGACY_KEY = 'formkurve-v1';
 let KEY = LEGACY_KEY;
@@ -346,6 +346,58 @@ export function bestE10(sets, e10) {
 export function lastSetsFor(exId) {
   const h = exerciseHistory(exId);
   return h.length ? h[h.length - 1].sets : null;
+}
+/** Letzte Einheit einer Übung inkl. Datum und Tagesnotiz. */
+export function lastSessionFor(exId) {
+  for (let i = state.workouts.length - 1; i >= 0; i--) {
+    const w = state.workouts[i];
+    const ex = w.exercises.find((e) => e.exerciseId === exId && e.sets.some((s) => s.done));
+    if (ex) return { date: w.startedAt, sets: ex.sets.filter((s) => s.done), note: ex.note || '' };
+  }
+  return null;
+}
+
+/** Kraftwert einer Einheit: bestes geschätztes 10RM, bei Körpergewicht die meisten Wiederholungen. */
+export function sessionStrength(sets) {
+  const best = Math.max(0, ...sets.map((s) => e10rm(s.weight || 0, s.reps || 0)));
+  return best > 0 ? best : Math.max(0, ...sets.map((s) => s.reps || 0));
+}
+
+/**
+ * Kraftindex über alle Übungen (Start = 100).
+ * Jede Einheit wird mit der vorherigen Einheit derselben Übung verglichen; pro Woche wird der
+ * Durchschnitt dieser Veränderungen gebildet und aufmultipliziert. So zählen neue Übungen erst
+ * ab ihrem zweiten Training mit und unterschiedliche Gewichtsklassen gleichen sich aus.
+ */
+export function strengthIndex() {
+  const ws = [...state.workouts].sort((a, b) => a.startedAt - b.startedAt);
+  if (!ws.length) return [];
+  const last = {};
+  const weeks = new Map(); // Wochenstart -> [log-Veränderungen]
+  const weekOf = (ts) => { const k = dayKey(new Date(ts)); const d = parseKey(k); return addDays(k, -((d.getDay() + 6) % 7)); };
+  for (const w of ws) {
+    const wk = weekOf(w.startedAt);
+    if (!weeks.has(wk)) weeks.set(wk, []);
+    for (const ex of w.exercises) {
+      const sets = ex.sets.filter((s) => s.done);
+      if (!sets.length) continue;
+      const v = sessionStrength(sets);
+      const prev = last[ex.exerciseId];
+      if (prev > 0 && v > 0) weeks.get(wk).push(Math.max(-0.25, Math.min(0.25, Math.log(v / prev))));
+      if (v > 0) last[ex.exerciseId] = v;
+    }
+  }
+  const out = [];
+  let idx = 100;
+  let wk = weekOf(ws[0].startedAt);
+  const end = weekOf(Date.now());
+  while (wk <= end) {
+    const ch = weeks.get(wk);
+    if (ch?.length) idx *= Math.exp(ch.reduce((a, b) => a + b, 0) / ch.length);
+    out.push({ key: wk, value: idx, sessions: ch?.length || 0 });
+    wk = addDays(wk, 7);
+  }
+  return out;
 }
 export function workoutDayKeys() {
   const set = new Set();
