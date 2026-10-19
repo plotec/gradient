@@ -138,6 +138,7 @@ export const onSyncStatus = (fn) => statusListeners.add(fn);
 export const getSyncStatus = () => syncStatus;
 const setStatus = (s) => { syncStatus = s; statusListeners.forEach((fn) => fn(s)); };
 
+export const restCall = (...a) => rest(...a);
 async function rest(path, opts = {}) {
   const token = await accessToken();
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {

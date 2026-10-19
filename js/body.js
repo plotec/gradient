@@ -3,6 +3,7 @@ import { state, save, weightTrend } from './store.js';
 import { uid, esc, fmt, fmtMax, signed, parseNum, todayKey, addDays, fmtDay, parseKey } from './utils.js';
 import { icon, onAct, onChange, openSheet, closeSheet, topSheet, redrawSheet, confirmDialog, toast } from './ui.js';
 import { lineChart } from './charts.js';
+import { goalLabel, goalNumbers, weeklyWeightResults } from './goals.js';
 
 let bodyDate = todayKey();
 export const resetBodyDate = () => { bodyDate = todayKey(); };
@@ -40,6 +41,7 @@ export function renderBody() {
         <div class="stat"><span class="lbl">7 Tage</span><span class="mid-num ${weekAgo && last.trend - weekAgo.trend < 0 ? 'up' : ''}">${weekAgo ? signed(last.trend - weekAgo.trend, 1) : '–'}</span></div>
         <div class="stat"><span class="lbl">Einträge</span><span class="mid-num">${trend.length}</span></div>
       </div>` : '<div class="small muted">Wiege dich jeden Morgen nach dem Aufstehen und vor dem Frühstück – so werden die Werte vergleichbar.</div>'}
+      ${goalStatus()}
       ${w != null ? `<button class="link" data-act="weight-del" style="align-self:flex-start;color:var(--bad)">Eintrag für ${fmtDay(bodyDate)} löschen</button>` : ''}
     </div>
 
@@ -69,6 +71,19 @@ export function renderBody() {
         <div class="grow"><div class="t">${fmtDay(p.key)}</div><div class="s">Trend ${fmtMax(p.trend, 1)} kg</div></div>
         <div class="r"><div class="mid-num" style="font-size:19px">${fmtMax(p.w, 1)}</div><div class="tiny ${d == null ? 'faint' : d < 0 ? 'up' : d > 0 ? 'down' : 'faint'}">${d == null ? '' : signed(d, 1)}</div></div></button>`;
     }).join('')}</div></div>` : '<div class="card flat"><div class="empty">Noch keine Einträge.</div></div>'}`;
+}
+
+function goalStatus() {
+  const res = weeklyWeightResults();
+  const last = res[res.length - 1];
+  const hits = res.slice(-8).filter((r) => r.hit).length;
+  const g = state.settings.goal;
+  const tw = g.targetWeight;
+  const lw = weightTrend().pop();
+  return `<button class="goal-line" data-act="goal-open">
+    <span class="grow"><span class="small muted">Ziel</span><br><b style="font-weight:500">${goalLabel()}</b>${tw ? ` · Zielgewicht ${fmtMax(tw, 1)} kg${lw ? ` (noch ${signed(tw - lw.trend, 1)} kg)` : ''}` : ''}</span>
+    <span style="text-align:right">${last ? `<span class="chip ${last.hit ? 'good' : 'food'}">${last.hit ? 'getroffen' : 'verfehlt'}: ${signed(last.change, 2)} kg</span><br><span class="tiny muted">letzte Woche · ${hits}/${Math.min(8, res.length)} Wochen im Plan</span>` : '<span class="tiny muted">Auswertung ab der ersten vollen Woche</span>'}</span>
+  </button>`;
 }
 
 function weightChart(days) {

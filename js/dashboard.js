@@ -3,6 +3,8 @@ import { state, save, dayKcal, latestWeight, weightTrend, workoutDayKeys, streng
 import { esc, fmt, fmtMax, signed, todayKey, addDays, parseKey, dayKey, MONTHS, fmtShort, sum } from './utils.js';
 import { icon, onAct, onChange, openSheet, closeSheet, topSheet, redrawSheet, confirmDialog, toast } from './ui.js';
 import { lineChart, barChart } from './charts.js';
+import { goalNumbers, goalLabel, targetIntake, openGoalSheet } from './goals.js';
+import { computePoints, leaderboardCard } from './points.js';
 import { dayStatus, rate, yearStatuses, supplementHabits, otherHabits } from './success.js';
 import { currentSession, logout, changePassword, cloudEnabled, getSyncStatus, onSyncStatus, AuthError } from './cloud.js';
 import { loadBls, blsCount, importBlsFile, BLS_CREDIT } from './foods-db.js';
@@ -100,6 +102,7 @@ export function renderDashboard() {
     <div class="page-head">
       <div class="brand">${logoSvg()}Formkurve</div>
       <div class="row" style="gap:8px">
+        <button class="pill-chip" data-act="points-open" title="Punkte diese Woche" style="cursor:pointer">${icon('star')}${fmt(computePoints().week)}</button>
         <span class="pill-chip" title="Tage in Folge aktiv">${icon('flame')}${streak}</span>
         <button class="icon-btn" data-act="settings-open" aria-label="Einstellungen" style="width:44px;height:44px;border:1px solid var(--line);background:var(--surface)">${icon('gear')}</button>
       </div>
@@ -124,7 +127,7 @@ export function renderDashboard() {
     <div class="card">
       <div class="row between" style="align-items:flex-start">
         <div class="metric"><span class="lbl">Gewichtstrend</span><span class="v">${avgW ? fmtMax(avgW, 1) : '–'}<small>kg Ø</small></span></div>
-        ${wDelta != null ? deltaChip(wDelta, ' kg', 1, P.vs, state.settings.weeklyRate > 0) : ''}
+        ${wDelta != null ? deltaChip(wDelta, ' kg', 1, P.vs, goalNumbers().rate > 0) : ''}
       </div>
       ${lineChart({ series: weightSeries, height: 150, yRight: true, xLabels })}
     </div>
@@ -142,6 +145,8 @@ export function renderDashboard() {
         <span class="${goalState[1] === 'ok' ? 'ok-text' : 'small muted'}" ${goalState[1] === 'food' ? 'style="color:var(--amber)"' : ''}>${goalState[0]}</span>
       </div>
     </div>
+
+    ${leaderboardCard()}
 
     <h2 class="sec">Einblicke</h2>
     <div class="insights">
@@ -229,10 +234,21 @@ function donut(parts) {
   return `<svg viewBox="0 0 40 40">${g}</svg>`;
 }
 
+function goalBox() {
+  const target = targetIntake();
+  const g = state.settings.goal;
+  return `<div class="divider"></div>
+    <div class="row between wrap" style="gap:10px">
+      <div><div class="small muted">Dein Ziel: ${goalLabel()}</div>
+        <div class="mid-num" style="color:var(--food)">${target != null ? `${fmt(target)} kcal` : 'Umsatz noch unbekannt'}</div>
+        <div class="tiny muted">${g.auto ? 'Kalorienziel wird automatisch angepasst' : `eingestellt: ${fmt(state.settings.goals.kcal)} kcal`}</div></div>
+      <button class="btn sm" data-act="goal-open">${icon('edit')}Ziel ändern</button>
+    </div>`;
+}
+
 // ---------- Kalorienverbrauch ----------
 function tdeeCard() {
   const r = computeTdee();
-  const rate = state.settings.weeklyRate;
   const win = state.settings.tdeeWindow;
   const seg = `<div class="seg">${[14, 28, 56].map((d) => `<button class="${win === d ? 'on' : ''}" data-act="tdee-win" data-d="${d}">${d} Tage</button>`).join('')}</div>`;
   if (r.tdee == null) {
@@ -244,9 +260,9 @@ function tdeeCard() {
         <div class="stat"><span class="lbl">Tage geloggt</span><span class="mid-num">${r.loggedDays}/${win}</span></div>
         <div class="stat"><span class="lbl">Tage gewogen</span><span class="mid-num">${r.weighDays}/${win}</span></div>
       </div>
+      ${goalBox()}
     </div>`;
   }
-  const target = r.tdee + (rate * 7700) / 7;
   const qColor = r.quality === 'gut' ? 'good' : r.quality === 'mittel' ? 'food' : '';
   return `<div class="card tdee">
     <div class="card-head"><h3>Dein Kalorienverbrauch</h3><span class="chip ${qColor}">Datenlage ${r.quality}</span></div>
@@ -259,11 +275,7 @@ function tdeeCard() {
       <div class="stat"><span class="lbl">Tage gewogen</span><span class="mid-num">${r.weighDays}/${win}</span></div>
     </div>
     <div class="small muted">Berechnung: Ø Zufuhr ${fmt(r.avgIntake)} kcal ${r.slopePerWeek <= 0 ? '+' : '−'} ${fmt(Math.abs((r.slopePerWeek / 7) * 7700))} kcal aus der Gewichtsänderung (${signed(r.slopePerWeek, 2)} kg/Woche × 7.700 kcal/kg ÷ 7).</div>
-    <div class="divider"></div>
-    <div class="row between wrap">
-      <div><div class="small muted">Für ${signed(rate, 2)} kg / Woche iss etwa</div><div class="mid-num" style="color:var(--food)">${fmt(Math.round(target / 10) * 10)} kcal</div></div>
-      <button class="btn sm" data-act="tdee-apply" data-v="${Math.round(target / 10) * 10}">Als Ziel übernehmen</button>
-    </div>
+    ${goalBox()}
   </div>`;
 }
 
@@ -389,7 +401,7 @@ function openSettings() {
           <h2 class="sec">Ziele</h2>
           <div class="card">
             <div class="grid2">
-              <label class="field"><span>Gewichtsziel pro Woche</span><select class="input" data-ch="set-rate">${[-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5].map((v) => `<option value="${v}" ${s.weeklyRate === v ? 'selected' : ''}>${signed(v, 2)} kg</option>`).join('')}</select></label>
+              <label class="field"><span>Mein Ziel</span><button class="btn" data-act="goal-open" style="justify-content:flex-start">${goalLabel()} ${icon('right')}</button></label>
               <label class="field"><span>Kalorienziel</span><button class="btn" data-act="nut-goals" style="justify-content:flex-start">${fmt(s.goals.kcal)} kcal ${icon('right')}</button></label>
             </div>
           </div>

@@ -138,7 +138,9 @@ function defaults({ seed = false } = {}) {
       mealNames: ['Frühstück', 'Mittagessen', 'Nachmittag', 'Abendessen', 'Snacks'],
       goals: { kcal: 2500, protein: 180, carbs: 260, fat: 80 },
       restDefault: 120,
-      weeklyRate: -0.5,
+      weeklyRate: -0.5, // veraltet, siehe goal
+      // Ziel: über Gewicht pro Woche oder Kalorienbilanz pro Tag
+      goal: { mode: 'rate', rate: -0.5, balance: -300, targetWeight: null, auto: false, tdeeManual: null, lastAuto: null },
       tdeeWindow: 28,
       theme: 'auto',
       // Erfolgskästchen
@@ -183,6 +185,7 @@ function migrate(s) {
     goals: { ...d.settings.goals, ...(s.settings?.goals || {}) },
     nutritionChecks: { ...d.settings.nutritionChecks, ...(s.settings?.nutritionChecks || {}) },
     schedule: { ...d.settings.schedule, ...(s.settings?.schedule || {}) },
+    goal: { ...d.settings.goal, ...(s.settings?.goal || { rate: s.settings?.weeklyRate ?? -0.5 }) },
   };
   // Beginn der Auswertung = frühester Eintrag (für ältere Datenstände)
   if (!hadStart) {
@@ -511,3 +514,30 @@ export function demoData() {
 function mulberry(a) {
   return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
+
+// ---------- Makros: Ausgleich immer über Kohlenhydrate ----------
+/** Kohlenhydrate füllen, was Kalorien minus Eiweiß und Fett übrig lassen. */
+export function fillCarbs(d) {
+  d.carbs = Math.max(0, Math.round((d.kcal - d.protein * 4 - d.fat * 9) / 4));
+}
+/** Änderung eines Werts; die Kohlenhydrate gleichen aus (bei Kohlenhydraten: Eiweiß und Fett anteilig). */
+export function adjustMacro(d, key, value) {
+  value = Math.max(0, Math.round(value || 0));
+  if (key === 'kcal') { d.kcal = value; fillCarbs(d); return d; }
+  if (key === 'carbs') {
+    d.carbs = Math.min(value, Math.floor(d.kcal / 4));
+    const rest = d.kcal - d.carbs * 4;
+    const pf = d.protein * 4 + d.fat * 9;
+    const f = pf > 0 ? rest / pf : 0;
+    d.protein = Math.max(0, Math.round(d.protein * f));
+    d.fat = Math.max(0, Math.round(d.fat * f));
+    fillCarbs(d);
+    return d;
+  }
+  const other = key === 'protein' ? d.fat * 9 : d.protein * 4;
+  const per = key === 'protein' ? 4 : 9;
+  d[key] = Math.min(value, Math.floor((d.kcal - other) / per)); // höchstens so viel, dass KH bei 0 landen
+  fillCarbs(d);
+  return d;
+}
+

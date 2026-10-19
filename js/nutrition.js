@@ -1,11 +1,12 @@
 // Bereich Ernährung: Tagebuch mit Mahlzeiten, Lebensmittel-Datenbank, eigene Mahlzeiten, Barcode, Online-Suche.
-import { state, save, latestWeight, dayDiary, ensureDiary, entryNut, totals, foodById, makeEntry, touchRecent, mealTotals, foodPer100 } from './store.js';
+import { state, save, latestWeight, adjustMacro, fillCarbs, dayDiary, ensureDiary, entryNut, totals, foodById, makeEntry, touchRecent, mealTotals, foodPer100 } from './store.js';
 import { uid, esc, fmt, fmtMax, parseNum, todayKey, addDays, fmtDay, round } from './utils.js';
 import { icon, onAct, onInput, onChange, openSheet, closeSheet, topSheet, redrawSheet, confirmDialog, menuDialog, toast } from './ui.js';
 import { ring } from './charts.js';
 import { nutritionCheck } from './success.js';
 import { loadBls, searchBls, blsCount } from './foods-db.js';
 import { openVoice } from './voice.js';
+import { targetIntake, goalLabel, openGoalSheet } from './goals.js';
 
 let nutDate = todayKey();
 export const setNutDate = (k) => { nutDate = k; };
@@ -749,31 +750,6 @@ const MACROS = [
 ];
 let goalDraft = null;
 
-/** Kohlenhydrate füllen, was Kalorien minus Eiweiß und Fett übrig lassen. */
-function fillCarbs(d) {
-  d.carbs = Math.max(0, Math.round((d.kcal - d.protein * 4 - d.fat * 9) / 4));
-}
-/** Änderung eines Werts; die Kohlenhydrate gleichen aus (bei Kohlenhydraten: Eiweiß und Fett anteilig). */
-export function adjustMacro(d, key, value) {
-  value = Math.max(0, Math.round(value || 0));
-  if (key === 'kcal') { d.kcal = value; fillCarbs(d); return d; }
-  if (key === 'carbs') {
-    d.carbs = Math.min(value, Math.floor(d.kcal / 4));
-    const rest = d.kcal - d.carbs * 4;
-    const pf = d.protein * 4 + d.fat * 9;
-    const f = pf > 0 ? rest / pf : 0;
-    d.protein = Math.max(0, Math.round(d.protein * f));
-    d.fat = Math.max(0, Math.round(d.fat * f));
-    fillCarbs(d);
-    return d;
-  }
-  const other = key === 'protein' ? d.fat * 9 : d.protein * 4;
-  const per = key === 'protein' ? 4 : 9;
-  d[key] = Math.min(value, Math.floor((d.kcal - other) / per)); // höchstens so viel, dass KH bei 0 landen
-  fillCarbs(d);
-  return d;
-}
-
 export function openGoals() {
   goalDraft = { ...state.settings.goals };
   fillCarbs(goalDraft);
@@ -782,6 +758,7 @@ export function openGoals() {
     render: () => ({
       title: 'Ernährungsziele',
       body: `<form class="stack" id="goals-form" data-submit="goals-save">
+        <button type="button" class="goal-line" data-act="goal-from-goals"><span class="grow"><span class="small muted">Ziel: ${goalLabel()}</span><br><b style="font-weight:500">${targetIntake() != null ? `Empfohlen: ${fmt(targetIntake())} kcal` : 'Ziel festlegen'}</b></span>${icon('right')}</button>
         <div class="card">
           <label class="field"><span>Kalorien pro Tag</span>
             <div class="row"><input class="input kcal-in" id="gl-kcal" inputmode="numeric" value="${goalDraft.kcal}" data-in="gl-in" data-k="kcal" autocomplete="off"><span class="muted">kcal</span></div></label>
@@ -854,6 +831,7 @@ onAct({
 });
 onAct({
   'nut-goals': () => openGoals(),
+  'goal-from-goals': () => { closeSheet(); openGoalSheet(); },
   'goals-save': () => {
     const fd = new FormData(document.getElementById('goals-form'));
     Object.assign(state.settings.goals, goalDraft);

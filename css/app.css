@@ -501,3 +501,13 @@ input[type="range"] { min-width: 0; height: 28px; }
 .note.pinned { background: var(--amber-soft); }
 .note.pinned svg.i { color: var(--amber); }
 .last-box { background: var(--surface-2); border-radius: 12px; padding: 9px 11px; display: flex; flex-direction: column; gap: 2px; }
+
+/* Rangliste */
+.board-row { padding: 9px 2px; }
+.board-row.me { background: var(--accent-soft); border-radius: 12px; padding-inline: 8px; border-bottom-color: transparent; }
+.rank { width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: none; }
+.rank.r1 { background: var(--amber); color: #241703; }
+.rank.r2 { background: #cfd3cb; color: #1a1c18; }
+.rank.r3 { background: #c98b55; color: #1f1208; }
+.pill-chip svg.i[viewBox] { }
+.goal-line { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--surface-2); border: 0; border-radius: 14px; padding: 10px 12px; color: var(--fg); }
