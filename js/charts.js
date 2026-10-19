@@ -17,27 +17,31 @@ function niceTicks(min, max, count = 4) {
 /**
  * series: [{ points:[{x(ms), y}], color, width?, dots?, dash? }]
  */
-export function lineChart({ series, height = 180, yDigits = 1, yPad = 0.1 }) {
+export function lineChart({ series, height = 180, yDigits = 1, yPad = 0.1, yRight = false, xLabels = null }) {
   const all = series.flatMap((s) => s.points);
   if (all.length < 2) return '<div class="empty small">Noch zu wenig Daten für ein Diagramm.</div>';
-  const W = 340, H = height, L = 34, R = 8, T = 10, B = 22;
-  const xs = all.map((p) => p.x), ys = all.map((p) => p.y);
+  const W = 340, H = height, L = yRight ? 6 : 34, R = yRight ? 36 : 8, T = 10, B = 22;
+  const xs = [...all.map((p) => p.x), ...(xLabels || []).map((l) => l.x)], ys = all.map((p) => p.y);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
   let y0 = Math.min(...ys), y1 = Math.max(...ys);
   const pad = (y1 - y0) * yPad || 0.5;
-  const { lo, hi, ticks } = niceTicks(y0 - pad, y1 + pad, 4);
+  const { lo, hi, ticks } = niceTicks(y0 - pad, y1 + pad, 3);
   const sx = (x) => L + ((x - x0) / (x1 - x0 || 1)) * (W - L - R);
   const sy = (y) => T + (1 - (y - lo) / (hi - lo || 1)) * (H - T - B);
   let g = '';
   for (const t of ticks) {
     g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${sy(t)}" y2="${sy(t)}"/>`;
-    g += `<text x="${L - 6}" y="${sy(t) + 3.5}" text-anchor="end">${fmtMax(t, yDigits)}</text>`;
+    g += yRight ? `<text x="${W}" y="${sy(t) + 3.5}" text-anchor="end">${fmtMax(t, yDigits)}</text>` : `<text x="${L - 6}" y="${sy(t) + 3.5}" text-anchor="end">${fmtMax(t, yDigits)}</text>`;
   }
-  // x-Beschriftung: Anfang, Mitte, Ende
-  const xl = [x0, (x0 + x1) / 2, x1];
-  xl.forEach((x, i) => {
-    g += `<text x="${sx(x)}" y="${H - 6}" text-anchor="${['start', 'middle', 'end'][i]}">${fmtShort(dayKey(new Date(x)))}</text>`;
-  });
+  if (xLabels) {
+    xLabels.forEach((l) => { g += `<text x="${sx(l.x)}" y="${H - 6}" text-anchor="middle">${l.label}</text>`; });
+  } else {
+    // x-Beschriftung: Anfang, Mitte, Ende
+    const xl = [x0, (x0 + x1) / 2, x1];
+    xl.forEach((x, i) => {
+      g += `<text x="${sx(x)}" y="${H - 6}" text-anchor="${['start', 'middle', 'end'][i]}">${fmtShort(dayKey(new Date(x)))}</text>`;
+    });
+  }
   for (const s of series) {
     if (!s.points.length) continue;
     const d = s.points.map((p, i) => `${i ? 'L' : 'M'}${sx(p.x).toFixed(1)},${sy(p.y).toFixed(1)}`).join('');
@@ -55,28 +59,41 @@ export function lineChart({ series, height = 180, yDigits = 1, yPad = 0.1 }) {
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:auto;aspect-ratio:${W}/${H}">${g}</svg>`;
 }
 
-/** bars: [{ x(ms), y }], goal?: number */
-export function barChart({ bars, goal, color, height = 150 }) {
+let gid = 0;
+/**
+ * Balken im Referenz-Look: abgerundet, Farbverlauf, ein hervorgehobener Balken (amber, Glow),
+ * gestrichelte Ziellinie, y-Achse rechts.
+ * bars: [{ y, label, highlight? }]
+ */
+export function barChart({ bars, goal, color = 'var(--accent)', hiColor = 'var(--amber)', height = 160 }) {
   if (!bars.some((b) => b.y > 0)) return '<div class="empty small">Noch keine Einträge im Zeitraum.</div>';
-  const W = 340, H = height, L = 34, R = 8, T = 10, B = 22;
-  const max = Math.max(goal || 0, ...bars.map((b) => b.y)) * 1.08;
+  const W = 340, H = height, L = 4, R = 40, T = 10, B = 24;
+  const max = Math.max(goal || 0, ...bars.map((b) => b.y)) * 1.1;
   const { hi, ticks } = niceTicks(0, max, 3);
   const sy = (y) => T + (1 - y / hi) * (H - T - B);
   const bw = (W - L - R) / bars.length;
-  let g = '';
+  const barW = Math.min(14, bw * 0.55);
+  const id = `g${++gid}`;
+  let g = `<defs>
+    <linearGradient id="${id}a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}"/><stop offset="1" stop-color="${color}" stop-opacity=".45"/></linearGradient>
+    <linearGradient id="${id}b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${hiColor}"/><stop offset="1" stop-color="${hiColor}" stop-opacity=".6"/></linearGradient>
+    <filter id="${id}f" x="-100%" y="-30%" width="300%" height="160%"><feGaussianBlur stdDeviation="4"/></filter>
+  </defs>`;
   for (const t of ticks) {
-    g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${sy(t)}" y2="${sy(t)}"/>`;
-    g += `<text x="${L - 6}" y="${sy(t) + 3.5}" text-anchor="end">${fmtMax(t, 0)}</text>`;
+    g += `<line class="grid" x1="${L}" x2="${W - R + 4}" y1="${sy(t)}" y2="${sy(t)}" stroke-opacity=".6"/>`;
+    g += `<text x="${W}" y="${sy(t) + 3.5}" text-anchor="end">${fmtMax(t, 0)}</text>`;
   }
+  if (goal) g += `<line x1="${L}" x2="${W - R + 4}" y1="${sy(goal)}" y2="${sy(goal)}" stroke="var(--muted)" stroke-dasharray="3 4" stroke-opacity=".7"/>`;
+  const every = Math.ceil(bars.length / 8);
   bars.forEach((b, i) => {
-    if (b.y <= 0) return;
-    const h = sy(0) - sy(b.y);
-    g += `<rect x="${(L + i * bw + bw * 0.15).toFixed(1)}" y="${sy(b.y).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${color}" fill-opacity="${b.dim ? 0.45 : 1}"/>`;
-  });
-  if (goal) g += `<line x1="${L}" x2="${W - R}" y1="${sy(goal)}" y2="${sy(goal)}" stroke="var(--fg)" stroke-dasharray="4 3" stroke-opacity=".6"/>`;
-  const idx = [0, Math.floor(bars.length / 2), bars.length - 1];
-  idx.forEach((i, j) => {
-    g += `<text x="${L + i * bw + bw / 2}" y="${H - 6}" text-anchor="${['start', 'middle', 'end'][j]}">${fmtShort(dayKey(new Date(bars[i].x)))}</text>`;
+    const cx = L + i * bw + bw / 2;
+    if (b.y > 0) {
+      const y = sy(b.y), h = sy(0) - y, x = cx - barW / 2, r = Math.min(barW / 2, h);
+      const d = `M${x.toFixed(1)},${sy(0).toFixed(1)}V${(y + r).toFixed(1)}A${r},${r} 0 0 1 ${(x + barW).toFixed(1)},${(y + r).toFixed(1)}V${sy(0).toFixed(1)}Z`;
+      if (b.highlight) g += `<path d="${d}" fill="${hiColor}" opacity=".55" filter="url(#${id}f)"/>`;
+      g += `<path d="${d}" fill="url(#${id}${b.highlight ? 'b' : 'a'})" ${b.dim ? 'opacity=".45"' : ''}/>`;
+    }
+    if (b.label && (i % every === 0 || bars.length <= 8)) g += `<text x="${cx}" y="${H - 6}" text-anchor="middle">${b.label}</text>`;
   });
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:auto;aspect-ratio:${W}/${H}">${g}</svg>`;
 }

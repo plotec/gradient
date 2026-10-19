@@ -92,10 +92,10 @@ function defaults() {
     diary: {},
     weights: {},
     habits: [
-      { id: 'h-kreatin', name: 'Kreatin', color: '#a78bfa' },
-      { id: 'h-vitd', name: 'Vitamin D3/K2', color: '#ffc145' },
-      { id: 'h-omega', name: 'Omega 3', color: '#5ad1e6' },
-      { id: 'h-water', name: '3 Liter Wasser', color: '#3d8bff' },
+      { id: 'h-kreatin', name: 'Kreatin', color: '#c3a6ff' },
+      { id: 'h-vitd', name: 'Vitamin D3/K2', color: '#f2e3a0' },
+      { id: 'h-omega', name: 'Omega 3', color: '#8ec5ff' },
+      { id: 'h-water', name: '3 Liter Wasser', color: '#7fd6b4' },
     ],
     habitLog: {},
   };

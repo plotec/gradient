@@ -132,7 +132,7 @@ function entryAsFood(e) {
  * opts: { meal } – fügt ins Tagebuch (nutDate) ein
  *       { pick(foodId, grams) } – Auswahlmodus für den Mahlzeiten-Baukasten
  */
-function openAddFood(opts) {
+export function openAddFood(opts) {
   const ui = { tab: 'recent', q: '', online: [], onlineState: 'idle', onlineQ: '' };
   const picking = !!opts.pick;
   const tabs = [['recent', 'Zuletzt'], ['mine', 'Lebensmittel'], ...(picking ? [] : [['meals', 'Mahlzeiten']]), ['online', 'Online']];

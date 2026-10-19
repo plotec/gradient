@@ -5,8 +5,9 @@ import { icon, onAct, onChange, openSheet, closeSheet, topSheet, redrawSheet, co
 import { lineChart } from './charts.js';
 
 let bodyDate = todayKey();
+export const resetBodyDate = () => { bodyDate = todayKey(); };
 let range = 90;
-export const HABIT_COLORS = ['#a78bfa', '#3d8bff', '#2fc28a', '#ffc145', '#ff9f43', '#ff6b8b', '#5ad1e6', '#e879f9'];
+export const HABIT_COLORS = ['#c3a6ff', '#b8e05c', '#7fd6b4', '#f7b633', '#ff8a5c', '#8ec5ff', '#f2e3a0', '#ff8fb3'];
 
 export function renderBody() {
   const w = state.weights[bodyDate];

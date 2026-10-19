@@ -1,59 +1,175 @@
 // Dashboard: Tagesüberblick, Kalorienverbrauch (TDEE), Jahresübersichten, Diagramme. Dazu die Einstellungen.
 import { state, save, dayKcal, latestWeight, weightTrend, workoutDayKeys, computeTdee, totals, dayDiary, replaceState, resetAll, demoData, storageWorks } from './store.js';
-import { esc, fmt, fmtMax, signed, todayKey, addDays, parseKey, dayKey, MONTHS, parseNum } from './utils.js';
+import { esc, fmt, fmtMax, signed, todayKey, addDays, parseKey, dayKey, MONTHS, fmtShort, sum } from './utils.js';
 import { icon, onAct, onChange, openSheet, closeSheet, topSheet, confirmDialog, toast } from './ui.js';
 import { lineChart, barChart } from './charts.js';
 
 let year = new Date().getFullYear();
+let period = 'week';
+const PERIODS = { week: { days: 7, label: 'Woche', vs: 'Vorwoche' }, month: { days: 30, label: 'Monat', vs: 'Vormonat' }, quarter: { days: 91, label: '3 Monate', vs: 'Vorperiode' }, year: { days: 365, label: 'Jahr', vs: 'Vorjahr' } };
+const WD = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+const WD_LONG = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+
+export const logoSvg = () => `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M5 30 C 12 30, 13 14, 20 18 S 29 8, 35 7" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round"/><circle cx="35" cy="7" r="3.6" fill="var(--amber)"/></svg>`;
+
+const avg = (a) => (a.length ? sum(a) / a.length : null);
+const keysBack = (end, n) => Array.from({ length: n }, (_, i) => addDays(end, i - n + 1));
+
+/** Tage in Folge mit irgendeinem Eintrag (Essen, Gewicht, Training). */
+function activityStreak() {
+  const wd = workoutDayKeys();
+  const active = (k) => dayKcal(k) > 0 || state.weights[k] != null || wd.has(k);
+  let k = todayKey();
+  if (!active(k)) k = addDays(k, -1);
+  let n = 0;
+  while (active(k)) { n++; k = addDays(k, -1); }
+  return n;
+}
+
+function deltaChip(diff, unit, digits, vs, invert = false) {
+  if (diff == null || Number.isNaN(diff)) return '';
+  const down = diff < 0;
+  const good = invert ? !down : down;
+  return `<div class="delta"><span class="chip ${Math.abs(diff) < 1e-9 ? '' : good ? 'good' : 'food'}">${icon(down ? 'arrowDown' : 'arrowUp')}${fmtMax(Math.abs(diff), digits)}${unit}</span><span class="vs">vs. ${vs}</span></div>`;
+}
 
 export function renderDashboard() {
   const today = todayKey();
   const g = state.settings.goals;
+  const P = PERIODS[period];
+  const keys = keysBack(today, P.days);
+  const prevKeys = keysBack(addDays(today, -P.days), P.days);
   const t = totals(dayDiary(today).entries);
   const lw = latestWeight();
   const trend = weightTrend();
-  const weekAgo = trend.filter((p) => p.key <= addDays(today, -7)).pop();
   const wdays = workoutDayKeys();
-  // Woche ab Montag
   const now = new Date();
   const monday = addDays(today, -((now.getDay() + 6) % 7));
   let weekCount = 0;
   for (let i = 0; i < 7; i++) if (wdays.has(addDays(monday, i))) weekCount++;
   const habitsToday = (state.habitLog[today] || []).length + (state.weights[today] != null ? 1 : 0);
   const habitsTotal = state.habits.length + 1;
-  const hour = now.getHours();
-  const greet = hour < 11 ? 'Guten Morgen' : hour < 18 ? 'Hallo' : 'Guten Abend';
   const isEmpty = !state.workouts.length && !Object.keys(state.weights).length && !Object.keys(state.diary).length;
+  const streak = activityStreak();
+
+  // ---- Kalorien im Zeitraum ----
+  const kc = (k) => dayKcal(k);
+  const intake = keys.map(kc).filter((v) => v > 0);
+  const prevIntake = prevKeys.map(kc).filter((v) => v > 0);
+  const avgIn = avg(intake), prevAvgIn = avg(prevIntake);
+  let bars;
+  if (period === 'week' || period === 'month') {
+    bars = keys.map((k) => { const d = parseKey(k); return { y: kc(k), label: period === 'week' ? WD[d.getDay()] : `${d.getDate()}.`, dim: k === today && kc(k) < g.kcal * 0.5 }; });
+  } else if (period === 'quarter') {
+    bars = Array.from({ length: 13 }, (_, w) => { const ks = keys.slice(w * 7, w * 7 + 7); const v = avg(ks.map(kc).filter((x) => x > 0)) || 0; return { y: v, label: fmtShort(ks[0]) }; });
+  } else {
+    bars = Array.from({ length: 12 }, (_, m) => { const d = new Date(now.getFullYear(), now.getMonth() - 11 + m, 1); const ks = keys.filter((k) => { const x = parseKey(k); return x.getMonth() === d.getMonth() && x.getFullYear() === d.getFullYear(); }); return { y: avg(ks.map(kc).filter((x) => x > 0)) || 0, label: MONTHS[d.getMonth()].slice(0, 1) }; });
+  }
+  const maxI = bars.reduce((bi, b, i) => (b.y > bars[bi].y ? i : bi), 0);
+  if (bars[maxI]?.y > 0) bars[maxI].highlight = true;
+
+  // ---- Gewicht im Zeitraum ----
+  const from = keys[0];
+  const wIn = trend.filter((p) => p.key >= from);
+  const avgW = avg(wIn.map((p) => p.w));
+  const before = trend.filter((p) => p.key < from).pop();
+  const wDelta = wIn.length && before ? wIn[wIn.length - 1].trend - before.trend : null;
+  const x = (k) => parseKey(k).getTime();
+  const weightSeries = period === 'week'
+    ? [{ points: wIn.map((p) => ({ x: x(p.key), y: p.w })), color: 'var(--accent)', width: 2.5, dots: true, dotR: 4 }]
+    : [
+      { points: wIn.map((p) => ({ x: x(p.key), y: p.w })), color: 'var(--muted)', line: false, dots: true, dotR: period === 'month' ? 2.4 : 1.5, dotOpacity: 0.45 },
+      { points: wIn.map((p) => ({ x: x(p.key), y: p.trend })), color: 'var(--accent)', width: 2.5, endDot: true },
+    ];
+  const xLabels = period === 'week' ? keys.map((k) => ({ x: x(k), label: WD[parseKey(k).getDay()] })) : null;
+
+  // ---- Einblicke ----
+  const mac = keys.reduce((a, k) => { const tt = totals(dayDiary(k).entries); a.p += tt.protein * 4; a.c += tt.carbs * 4; a.f += tt.fat * 9; return a; }, { p: 0, c: 0, f: 0 });
+  const macSum = mac.p + mac.c + mac.f;
+  const ws = state.workouts.filter((w) => dayKey(new Date(w.startedAt)) >= from);
+  const vol = (w) => sum(w.exercises, (e) => sum(e.sets, (st) => (st.weight || 0) * (st.reps || 0)));
+  const top = ws.reduce((b, w) => (!b || vol(w) > vol(b) ? w : b), null);
+  const goalPct = avgIn ? Math.round((avgIn / g.kcal) * 100) : 0;
+  const goalState = !avgIn ? ['Noch keine Daten', 'faint'] : goalPct > 105 ? ['Über dem Ziel', 'food'] : goalPct >= 90 ? ['Im Plan!', 'ok'] : ['Unter dem Ziel', 'food'];
+  const milestone = [7, 14, 30, 60, 100, 200, 365, 1000].find((m) => m > streak) || 1000;
 
   return `
     <div class="page-head">
-      <div><h1>Übersicht</h1><div class="sub">${greet} · ${new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }).format(now)}</div></div>
-      <button class="icon-btn" data-act="settings-open" aria-label="Einstellungen">${icon('gear')}</button>
+      <div class="brand">${logoSvg()}Formkurve</div>
+      <div class="row" style="gap:8px">
+        <span class="pill-chip" title="Tage in Folge aktiv">${icon('flame')}${streak}</span>
+        <button class="icon-btn" data-act="settings-open" aria-label="Einstellungen" style="width:44px;height:44px;border:1px solid var(--line);background:var(--surface)">${icon('gear')}</button>
+      </div>
     </div>
+    <div><h1 style="font-size:30px;font-weight:500;margin:6px 0 0;letter-spacing:-.01em">Dein Fortschritt</h1><div class="muted" style="font-size:15.5px;margin-top:2px">Kleine Schritte, große Wirkung.</div></div>
     ${!storageWorks() ? '<div class="card" style="border-color:var(--bad)"><b>Speichern nicht möglich.</b><span class="small muted">Der Browser blockiert den Speicher (z. B. privater Modus). Einträge gehen beim Schließen verloren.</span></div>' : ''}
     ${isEmpty ? `<div class="card flat"><div class="stack" style="gap:8px;text-align:center;padding:6px">
-      <b>Willkommen bei Formkurve</b>
-      <span class="small muted">Trag morgens dein Gewicht ein, logge dein Essen und starte dein erstes Training. Das Dashboard füllt sich dann von selbst. Zum Ausprobieren kannst du Beispieldaten laden.</span>
+      <b style="font-weight:500">Willkommen bei Formkurve</b>
+      <span class="small muted">Trag morgens dein Gewicht ein, logge dein Essen und starte dein erstes Training – über den Plus-Button geht alles mit einem Tipp. Zum Ausprobieren kannst du Beispieldaten laden.</span>
       <button class="btn sm" data-act="demo-load" style="align-self:center">Beispieldaten ansehen</button></div></div>` : ''}
 
+    <div class="seg">${Object.entries(PERIODS).map(([k, v]) => `<button class="${period === k ? 'on' : ''}" data-act="dash-period" data-k="${k}">${v.label}</button>`).join('')}</div>
+
+    <div class="card">
+      <div class="row between" style="align-items:flex-start">
+        <div class="metric"><span class="lbl">Kalorienzufuhr</span><span class="v">${avgIn ? fmt(avgIn) : '–'}<small>kcal Ø</small></span></div>
+        ${avgIn && prevAvgIn ? deltaChip(((avgIn - prevAvgIn) / prevAvgIn) * 100, ' %', 0, P.vs) : ''}
+      </div>
+      ${barChart({ bars, goal: g.kcal })}
+    </div>
+
+    <div class="card">
+      <div class="row between" style="align-items:flex-start">
+        <div class="metric"><span class="lbl">Gewichtstrend</span><span class="v">${avgW ? fmtMax(avgW, 1) : '–'}<small>kg Ø</small></span></div>
+        ${wDelta != null ? deltaChip(wDelta, ' kg', 1, P.vs, state.settings.weeklyRate > 0) : ''}
+      </div>
+      ${lineChart({ series: weightSeries, height: 150, yRight: true, xLabels })}
+    </div>
+
+    <div class="duo">
+      <div class="card streak" style="gap:6px">
+        <div class="metric"><span class="lbl">Serie</span><span class="v">${streak}<small>${streak === 1 ? 'Tag' : 'Tage'}</small></span><span class="small muted">${streak ? 'Weiter so!' : 'Starte heute'}</span></div>
+        <div class="flame-ring">${flameRing(streak / milestone)}<span class="f">${icon('flame')}</span></div>
+      </div>
+      <div class="card" style="gap:8px">
+        <div class="metric"><span class="lbl">Kalorienziel</span><span class="v">${goalPct || '–'}<small>% Ø</small></span></div>
+        <div class="progress"><i style="width:${Math.min(100, goalPct)}%;${goalPct > 105 ? 'background:var(--amber)' : ''}"></i></div>
+        <span class="${goalState[1] === 'ok' ? 'ok-text' : 'small muted'}" ${goalState[1] === 'food' ? 'style="color:var(--amber)"' : ''}>${goalState[0]}</span>
+      </div>
+    </div>
+
+    <h2 class="sec">Einblicke</h2>
+    <div class="insights">
+      <div class="insight"><span class="lbl">Ø Kalorien</span><span class="v">${avgIn ? fmt(avgIn) : '–'}<small>kcal</small></span>
+        <span class="s">${avgIn && prevAvgIn ? `${avgIn <= prevAvgIn ? '↓' : '↑'} ${fmt(Math.abs(avgIn - prevAvgIn))} vs. ${P.vs}` : `${intake.length} Tage geloggt`}</span></div>
+      <div class="insight"><span class="lbl">Makros</span>
+        ${macSum ? `<div class="donut-row">${donut([[mac.p, 'var(--protein)'], [mac.c, 'var(--carbs)'], [mac.f, 'var(--fat)']])}
+          <div class="donut-legend"><span><i style="background:var(--protein)"></i>${Math.round((mac.p / macSum) * 100)} % E</span><span><i style="background:var(--carbs)"></i>${Math.round((mac.c / macSum) * 100)} % K</span><span><i style="background:var(--fat)"></i>${Math.round((mac.f / macSum) * 100)} % F</span></div></div>` : '<span class="small muted">Noch keine Daten</span>'}
+      </div>
+      <div class="insight"><div class="row between"><span class="lbl">Top-Training</span><span class="star">${icon('star')}</span></div>
+        ${top ? `<span class="hl">${WD_LONG[new Date(top.startedAt).getDay()]}</span><span class="v" style="font-size:17px">${fmt(vol(top))}<small>kg</small></span><span class="s ellipsis">${esc(top.name)}</span>` : '<span class="small muted">Kein Training im Zeitraum</span>'}
+      </div>
+    </div>
+
+    <h2 class="sec">Heute</h2>
     <div class="kpis">
       <button class="kpi" data-act="goto" data-tab="nutrition">
-        <span class="lbl"><i style="background:var(--food)"></i>Kalorien heute</span>
+        <span class="lbl"><i style="background:var(--amber)"></i>Kalorien</span>
         <span class="val">${fmt(t.kcal)}<small>/ ${fmt(g.kcal)}</small></span>
-        <span class="s">E ${fmt(t.protein)} / ${fmt(g.protein)} g</span>
+        <span class="s">Eiweiß ${fmt(t.protein)} / ${fmt(g.protein)} g</span>
       </button>
       <button class="kpi" data-act="goto" data-tab="body">
         <span class="lbl"><i style="background:var(--body)"></i>Gewicht</span>
         <span class="val">${lw ? fmtMax(state.weights[today] ?? lw.w, 1) : '–'}<small>kg</small></span>
-        <span class="s">${state.weights[today] != null ? 'heute gewogen' : '<span style="color:var(--food)">heute noch offen</span>'}${lw && weekAgo ? ` · ${signed(lw.trend - weekAgo.trend, 1)} / Woche` : ''}</span>
+        <span class="s">${state.weights[today] != null ? 'heute gewogen' : '<span style="color:var(--amber)">heute noch offen</span>'}</span>
       </button>
       <button class="kpi" data-act="goto" data-tab="training">
-        <span class="lbl"><i style="background:var(--train)"></i>Training</span>
+        <span class="lbl"><i style="background:var(--accent)"></i>Training</span>
         <span class="val">${weekCount}<small>× diese Woche</small></span>
         <span class="s">${state.workouts.length} Einheiten insgesamt</span>
       </button>
       <button class="kpi" data-act="goto" data-tab="body">
-        <span class="lbl"><i style="background:var(--habit)"></i>Habits heute</span>
+        <span class="lbl"><i style="background:var(--habit)"></i>Habits</span>
         <span class="val">${habitsToday}<small>/ ${habitsTotal}</small></span>
         <span class="s">${habitsToday >= habitsTotal ? 'alles erledigt' : `${habitsTotal - habitsToday} offen`}</span>
       </button>
@@ -65,28 +181,30 @@ export function renderDashboard() {
       <div class="card-head">
         <button class="icon-btn sm" data-act="dash-year" data-d="-1" aria-label="Vorjahr">${icon('left')}</button>
         <h3 class="num">Jahresübersicht ${year}</h3>
-        <button class="icon-btn sm" data-act="dash-year" data-d="1" ${year >= new Date().getFullYear() ? 'disabled style="opacity:.3"' : ''} aria-label="Nächstes Jahr">${icon('right')}</button>
+        <button class="icon-btn sm" data-act="dash-year" data-d="1" ${year >= now.getFullYear() ? 'disabled style="opacity:.3"' : ''} aria-label="Nächstes Jahr">${icon('right')}</button>
       </div>
-      ${heatmap('Training', 'var(--train)', (k) => wdays.has(k))}
+      ${heatmap('Training', 'var(--accent)', (k) => wdays.has(k))}
       ${heatmap('Gewogen', 'var(--body)', (k) => state.weights[k] != null)}
-      ${heatmap('Ernährung geloggt', 'var(--food)', (k) => dayKcal(k) > 0)}
+      ${heatmap('Ernährung geloggt', 'var(--amber)', (k) => dayKcal(k) > 0)}
       ${state.habits.map((h) => heatmap(h.name, h.color, (k) => (state.habitLog[k] || []).includes(h.id))).join('')}
-    </div>
-
-    <div class="card">
-      <div class="card-head"><h3>Gewicht · 90 Tage</h3><span class="small muted">${lw ? `Trend ${fmtMax(lw.trend, 1)} kg` : ''}</span></div>
-      ${lineChart({
-        series: [
-          { points: trend.filter((p) => p.key >= addDays(today, -90)).map((p) => ({ x: parseKey(p.key).getTime(), y: p.w })), color: 'var(--muted)', line: false, dots: true, dotR: 1.8, dotOpacity: 0.5 },
-          { points: trend.filter((p) => p.key >= addDays(today, -90)).map((p) => ({ x: parseKey(p.key).getTime(), y: p.trend })), color: 'var(--body)', width: 2.5, endDot: true },
-        ],
-      })}
-    </div>
-
-    <div class="card">
-      <div class="card-head"><h3>Kalorien · 30 Tage</h3><span class="small muted">Linie = Ziel ${fmt(g.kcal)}</span></div>
-      ${barChart({ bars: Array.from({ length: 30 }, (_, i) => { const k = addDays(today, i - 29); return { x: parseKey(k).getTime(), y: dayKcal(k), dim: k === today }; }), goal: g.kcal, color: 'var(--food)' })}
     </div>`;
+}
+
+function flameRing(frac) {
+  const r = 34, c = 2 * Math.PI * r, f = Math.max(0, Math.min(1, frac));
+  return `<svg class="r" viewBox="0 0 80 80"><circle cx="40" cy="40" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="5"/>
+    ${f > 0 ? `<circle cx="40" cy="40" r="${r}" fill="none" stroke="var(--amber)" stroke-width="5" stroke-linecap="round" stroke-dasharray="${(c * f).toFixed(1)} ${c.toFixed(1)}" style="filter:drop-shadow(0 0 4px var(--amber))"/>` : ''}</svg>`;
+}
+function donut(parts) {
+  const total = sum(parts, (p) => p[0]);
+  const r = 15, c = 2 * Math.PI * r;
+  let off = 0, g = `<circle cx="20" cy="20" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="7"/>`;
+  for (const [v, col] of parts) {
+    const len = (v / total) * c;
+    g += `<circle cx="20" cy="20" r="${r}" fill="none" stroke="${col}" stroke-width="7" stroke-dasharray="${Math.max(0, len - 1).toFixed(2)} ${c.toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"/>`;
+    off += len;
+  }
+  return `<svg viewBox="0 0 40 40">${g}</svg>`;
 }
 
 // ---------- Kalorienverbrauch ----------
@@ -160,6 +278,7 @@ function heatmap(title, color, on) {
 
 const rerender = () => window.dispatchEvent(new Event('rerender'));
 onAct({
+  'dash-period': (el) => { period = el.dataset.k; rerender(); },
   'dash-year': (el) => { year = Math.min(new Date().getFullYear(), year + +el.dataset.d); rerender(); },
   'tdee-win': (el) => { state.settings.tdeeWindow = +el.dataset.d; save(); },
   'tdee-apply': async (el) => {

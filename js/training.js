@@ -447,7 +447,7 @@ function exerciseCard(aw, ex, i) {
         <span class="hd">#</span><span class="hd">kg</span><span class="hd">Wdh</span><span class="hd">10RM</span><span class="hd">Q</span><span class="hd">${icon('check')}</span>
         ${ex.sets.map((s, j) => `<div class="sr ${s.done ? 'row-done' : ''} ${j === firstOpen ? 'active-row' : ''}">
           <span class="n">${j + 1}</span>
-          <input id="w-${i}-${j}" type="text" inputmode="decimal" enterkeyhint="next" value="${s.weight ?? ''}" placeholder="kg" data-in="set-w" data-i="${i}" data-j="${j}" aria-label="Gewicht Satz ${j + 1}">
+          <input id="w-${i}-${j}" type="text" inputmode="decimal" enterkeyhint="next" value="${s.weight == null ? '' : String(s.weight).replace('.', ',')}" placeholder="kg" data-in="set-w" data-i="${i}" data-j="${j}" aria-label="Gewicht Satz ${j + 1}">
           <input id="r-${i}-${j}" type="text" inputmode="numeric" enterkeyhint="done" value="${s.reps ?? ''}" placeholder="${esc(repPlaceholder(ex.target))}" data-in="set-r" data-i="${i}" data-j="${j}" aria-label="Wiederholungen Satz ${j + 1}">
           <span class="rm" id="rm-${i}-${j}">${rmHtml(s)}</span>
           <select data-ch="set-q" data-i="${i}" data-j="${j}" aria-label="Qualität Satz ${j + 1}"><option value="">–</option>${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((q) => `<option ${s.quality === q ? 'selected' : ''}>${q}</option>`).join('')}</select>

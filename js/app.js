@@ -2,8 +2,9 @@
 import { state, subscribe } from './store.js';
 import { icon, onAct, redrawSheets, unlockAudio, closeAllSheets } from './ui.js';
 import { renderTraining, openWorkout } from './training.js';
-import { renderNutrition } from './nutrition.js';
-import { renderBody } from './body.js';
+import { renderNutrition, openAddFood, setNutDate } from './nutrition.js';
+import { renderBody, resetBodyDate } from './body.js';
+import { todayKey } from './utils.js';
 import { renderDashboard, applyTheme } from './dashboard.js';
 
 const TABS = [
@@ -17,8 +18,58 @@ const initialHash = location.hash.replace('#', '');
 let tab = TABS.some((t) => t.id === initialHash) ? initialHash : (() => { try { return localStorage.getItem('formkurve-tab') || 'dashboard'; } catch { return 'dashboard'; } })();
 
 function renderTabbar() {
-  document.getElementById('tabbar').innerHTML = TABS.map((t) => `
-    <button class="${t.id === tab ? 'on' : ''}" data-act="goto" data-tab="${t.id}" aria-label="${t.label}">${icon(t.icon)}<span>${t.label}</span></button>`).join('');
+  const btn = (t) => `<button class="${t.id === tab ? 'on' : ''}" data-act="goto" data-tab="${t.id}" aria-label="${t.label}">${icon(t.icon)}<span>${t.label}</span></button>`;
+  document.getElementById('tabbar').innerHTML = `${TABS.slice(0, 2).map(btn).join('')}
+    <div class="fab-slot"><button class="fab" data-act="quick-add" aria-label="Schnell hinzufügen">${icon('plus')}</button></div>
+    ${TABS.slice(2).map(btn).join('')}`;
+}
+
+function goto(next) {
+  closeAllSheets();
+  tab = next;
+  try { localStorage.setItem('formkurve-tab', tab); } catch {}
+  history.replaceState(null, '', `#${tab}`);
+  render();
+  window.scrollTo(0, 0);
+}
+
+/** Plus-Button: Schnellaktionen als Bottom-Sheet. */
+function quickAdd() {
+  const wrap = document.createElement('div');
+  wrap.className = 'dialog-wrap bottom';
+  const aw = state.activeWorkout;
+  const items = [
+    ['train', aw ? 'Training fortsetzen' : 'Training starten', 'dumbbell', 'var(--accent)', 'var(--accent-soft)'],
+    ['food', 'Essen eintragen', 'food', 'var(--amber)', 'var(--amber-soft)'],
+    ['weight', 'Gewicht eintragen', 'scale', 'var(--body)', 'var(--body-soft)'],
+    ['habits', 'Habits abhaken', 'check', 'var(--habit)', 'color-mix(in srgb, var(--habit) 15%, transparent)'],
+  ];
+  wrap.innerHTML = `<div class="dialog" role="dialog" aria-label="Schnell hinzufügen">
+    <h3>Hinzufügen</h3>
+    <div class="action-grid">${items.map(([k, l, ic, c, bg]) => `<button data-k="${k}"><span class="ai" style="background:${bg};color:${c}">${icon(ic)}</span>${l}</button>`).join('')}</div>
+    <button class="btn ghost block" data-k="">Abbrechen</button></div>`;
+  wrap.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-k]');
+    if (!b && e.target !== wrap) return;
+    e.stopPropagation();
+    wrap.remove();
+    const k = b?.dataset.k;
+    if (k === 'train') { goto('training'); if (state.activeWorkout) openWorkout(); }
+    if (k === 'food') {
+      goto('nutrition');
+      setNutDate(todayKey());
+      render();
+      const h = new Date().getHours() + new Date().getMinutes() / 60;
+      const meal = h < 10.5 ? 0 : h < 14.5 ? 1 : h < 17.5 ? 2 : h < 21.5 ? 3 : 4;
+      openAddFood({ meal: Math.min(meal, state.settings.mealNames.length - 1) });
+    }
+    if (k === 'weight' || k === 'habits') {
+      resetBodyDate();
+      goto('body');
+      if (k === 'weight') document.getElementById('weight-in')?.focus();
+    }
+  });
+  document.body.appendChild(wrap);
 }
 
 function render() {
@@ -43,14 +94,10 @@ function rerenderAll() {
 onAct({
   goto: (el) => {
     const next = el.dataset.tab;
-    closeAllSheets();
-    if (next === tab) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
-    tab = next;
-    try { localStorage.setItem('formkurve-tab', tab); } catch {}
-    history.replaceState(null, '', `#${tab}`);
-    render();
-    window.scrollTo(0, 0);
+    if (next === tab && !document.querySelector('.sheet')) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    goto(next);
   },
+  'quick-add': () => quickAdd(),
 });
 
 subscribe(rerenderAll);
