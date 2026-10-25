@@ -35,7 +35,7 @@ function goto(next) {
   try { localStorage.setItem('formkurve-tab', tab); } catch {}
   history.replaceState(null, '', `#${tab}`);
   render();
-  window.scrollTo(0, 0);
+  document.getElementById('view').scrollTo(0, 0);
 }
 
 /** Plus-Button: Schnellaktionen als Bottom-Sheet. */
@@ -100,7 +100,7 @@ function rerenderAll() {
 onAct({
   goto: (el) => {
     const next = el.dataset.tab;
-    if (next === tab && !document.querySelector('.sheet')) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    if (next === tab && !document.querySelector('.sheet')) { document.getElementById('view').scrollTo({ top: 0, behavior: 'smooth' }); return; }
     goto(next);
   },
   'quick-add': () => quickAdd(),

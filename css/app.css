@@ -80,16 +80,19 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
 .num { font-variant-numeric: tabular-nums; }
 
 /* ---------- App shell ---------- */
+/* Feste Hülle: nur der Inhalt scrollt, die Leiste sitzt im Layout (iOS verschiebt fixe Leisten, wenn die Seite nicht scrollen kann). */
+#app { position: fixed; inset: 0; display: flex; flex-direction: column; }
 .view {
-  padding: calc(env(safe-area-inset-top, 0px) + 10px) max(16px, env(safe-area-inset-right, 0px)) calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 24px) max(16px, env(safe-area-inset-left, 0px));
-  max-width: 640px;
-  margin: 0 auto;
+  flex: 1; min-height: 0; width: 100%;
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) max(16px, env(safe-area-inset-right, 0px), calc((100% - 608px) / 2)) 24px max(16px, env(safe-area-inset-left, 0px), calc((100% - 608px) / 2));
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
+.view > * { flex-shrink: 0; }
 .tabbar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  position: relative; flex: none; z-index: 20;
   display: grid; grid-template-columns: repeat(5, 1fr); align-items: end;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
