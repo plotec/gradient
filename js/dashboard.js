@@ -15,7 +15,7 @@ const PERIODS = { week: { days: 7, label: 'Woche', vs: 'Vorwoche' }, month: { da
 const WD = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const WD_LONG = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
 
-export const logoSvg = () => `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M5 30 C 12 30, 13 14, 20 18 S 29 8, 35 7" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round"/><circle cx="35" cy="7" r="3.6" fill="var(--amber)"/></svg>`;
+export const logoSvg = () => `<svg viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="brand-g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#b8e05c"/><stop offset="1" stop-color="#f7b633"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#brand-g)"/><path d="M346 148.8 A 140 140 0 1 0 396 256 L 286 256" fill="none" stroke="#111211" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 const avg = (a) => (a.length ? sum(a) / a.length : null);
 const keysBack = (end, n) => Array.from({ length: n }, (_, i) => addDays(end, i - n + 1));
