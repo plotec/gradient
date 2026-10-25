@@ -99,6 +99,11 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
   border-top: 1px solid var(--line);
   padding: 6px max(8px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
 }
+/* Home-Bildschirm-App auf dem iPhone: der Bereich für feste Elemente endet dort vor dem
+   unteren Rand, bottom: 0 lässt eine Lücke. Deshalb an die volle Bildschirmhöhe hängen. */
+@media (display-mode: standalone) {
+  .tabbar { bottom: auto; top: 100lvh; transform: translateY(-100%); }
+}
 .tabbar button {
   background: none; border: 0; padding: 6px 0 2px; color: var(--faint);
   display: flex; flex-direction: column; align-items: center; gap: 3px;

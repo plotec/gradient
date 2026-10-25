@@ -1,5 +1,5 @@
 // Offline-Cache für die App-Dateien. Bei Änderungen VERSION erhöhen.
-const VERSION = 'gradient-v10';
+const VERSION = 'gradient-v11';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/store.js', 'js/utils.js', 'js/ui.js', 'js/charts.js',
