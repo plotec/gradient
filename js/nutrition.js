@@ -346,11 +346,10 @@ async function lookupBarcode(code, opts) {
 
 // ---------- Barcode-Scanner ----------
 function openScanner(onCode) {
-  let stream = null, raf = null, zx = null, stopped = false;
+  let stream = null, raf = null, stopped = false;
   const stop = () => {
     stopped = true;
-    cancelAnimationFrame(raf);
-    try { zx?.reset?.(); } catch {}
+    clearTimeout(raf);
     stream?.getTracks().forEach((t) => t.stop());
   };
   const s = openSheet({
@@ -373,39 +372,40 @@ function openScanner(onCode) {
   (async () => {
     if (!navigator.mediaDevices?.getUserMedia) { msg('Kamera nicht verfügbar – gib die Nummer unten ein.'); return; }
     try {
-      if ('BarcodeDetector' in window) {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        video.srcObject = stream;
-        await video.play();
-        msg('Halte den Barcode ins Bild.');
-        const det = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] });
-        const loop = async () => {
-          if (stopped) return;
-          try { const codes = await det.detect(video); if (codes[0]) { s.found(codes[0].rawValue); return; } } catch {}
-          raf = requestAnimationFrame(loop);
-        };
-        loop();
-      } else {
+      // iPhone/Safari hat keinen eingebauten BarcodeDetector: dann dieselbe Schnittstelle als
+      // WebAssembly-Nachbau (ZXing-C++), der EAN-Codes deutlich zuverlässiger liest als zxing-js.
+      let Detector = window.BarcodeDetector;
+      if (!Detector) {
         msg('Scanner wird geladen …');
-        await loadScript('https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js');
+        ({ BarcodeDetector: Detector } = await import('https://cdn.jsdelivr.net/npm/barcode-detector@2.3.1/dist/es/pure.min.js'));
         if (stopped) return;
-        zx = new window.ZXing.BrowserMultiFormatReader();
-        msg('Halte den Barcode ins Bild.');
-        zx.decodeFromConstraints({ video: { facingMode: 'environment' } }, video, (result) => { if (result) s.found(result.getText()); });
       }
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      });
+      if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
+      const track = stream.getVideoTracks()[0];
+      try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch {}
+      video.srcObject = stream;
+      await video.play();
+      msg('Halte den Barcode ins Bild – etwa 15 cm Abstand.');
+      const det = new Detector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] });
+      const loop = async () => {
+        if (stopped) return;
+        try {
+          if (video.readyState >= 2) {
+            const codes = await det.detect(video);
+            if (codes[0]?.rawValue) { s.found(codes[0].rawValue); return; }
+          }
+        } catch {}
+        raf = setTimeout(loop, 120);
+      };
+      loop();
     } catch (e) {
       console.warn(e);
       msg('Kein Kamerazugriff – gib die Nummer unten ein.');
     }
   })();
-}
-function loadScript(src) {
-  return new Promise((res, rej) => {
-    if ([...document.scripts].some((x) => x.src === src)) { res(); return; }
-    const el = document.createElement('script');
-    el.src = src; el.onload = res; el.onerror = rej;
-    document.head.appendChild(el);
-  });
 }
 onAct({
   'scan-manual': () => { const v = document.getElementById('scan-code')?.value; if (v) spec('scanner')?.found(v); },

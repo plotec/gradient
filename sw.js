@@ -1,5 +1,5 @@
 // Offline-Cache für die App-Dateien. Bei Änderungen VERSION erhöhen.
-const VERSION = 'gradient-v11';
+const VERSION = 'gradient-v12';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/store.js', 'js/utils.js', 'js/ui.js', 'js/charts.js',
@@ -25,7 +25,7 @@ self.addEventListener('fetch', (e) => {
         return res;
       }).catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('index.html')))
     );
-  } else if (url.hostname.endsWith('fonts.googleapis.com') || url.hostname.endsWith('fonts.gstatic.com') || url.hostname === 'unpkg.com') {
+  } else if (url.hostname.endsWith('fonts.googleapis.com') || url.hostname.endsWith('fonts.gstatic.com') || url.hostname === 'unpkg.com' || url.hostname.endsWith('jsdelivr.net')) {
     e.respondWith(caches.match(e.request).then((r) => r || fetch(e.request).then((res) => {
       const copy = res.clone();
       caches.open(VERSION).then((c) => c.put(e.request, copy));

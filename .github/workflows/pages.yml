@@ -2,7 +2,7 @@ name: App veröffentlichen (GitHub Pages)
 
 on:
   push:
-    branches: [main, claude/fitness-tracking-app-ln7rv0]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
