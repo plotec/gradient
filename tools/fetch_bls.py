@@ -18,7 +18,7 @@ import urllib.request
 import zipfile
 
 DOWNLOAD_PAGE = "https://blsdb.de/download"
-UA = {"User-Agent": "Mozilla/5.0 (Formkurve BLS import)"}
+UA = {"User-Agent": "Mozilla/5.0 (Gradient BLS import)"}
 CREDIT = "Max Rubner-Institut (2025): Bundeslebensmittelschlüssel (BLS), Version 4.0. Karlsruhe. Lizenz CC BY 4.0"
 
 

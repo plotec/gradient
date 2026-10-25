@@ -1,4 +1,4 @@
-# Übergabe: Formkurve (Stand 25.10.2026)
+# Übergabe: Gradient (Stand 25.10.2026)
 
 Diese Datei fasst den kompletten Stand eines längeren Chats zusammen, damit eine neue Claude-Code-Sitzung
 nahtlos weitermacht. **Neue Sitzung: bitte zuerst diese Datei und die README.md lesen.**
@@ -42,14 +42,14 @@ Lokal testen: `python3 -m http.server 8765` im Ordner, dann `http://localhost:87
 
 ## Offene Schritte (Reihenfolge, Nutzer will die App HEUTE aufs Handy)
 
-1. **Code zu GitHub.** Ziel-Repo `plotec/test` (noch leer), Branch `claude/fitness-tracking-app-ln7rv0`
+1. **Code zu GitHub.** Ziel-Repo `plotec/gradient` (noch leer), Branch `claude/fitness-tracking-app-ln7rv0`
    (alle Commits liegen in diesem Ordner, Git-Verlauf ist dabei). Der Push aus der Cloud scheiterte mit 403, weil
    die Claude GitHub App nicht für `plotec` installiert war. Lokal einfach mit seinen eigenen Git-Zugangsdaten pushen
    (`git remote -v` prüfen) oder per Chrome-Erweiterung die GitHub App installieren. Sinnvoll: Branch nach `main`
    mergen/pushen, damit Pages von `main` deployt (Workflow reagiert auf `main` und den Branch).
 2. **GitHub Pages:** Repo → Settings → Pages → Source „GitHub Actions“. Hinweis: privates Repo braucht GitHub Pro,
    öffentliches ist kostenlos (Daten liegen nie im Repo). Mit ihm klären.
-3. **iPhone:** URL (z. B. `https://plotec.github.io/test/`) in Safari → Teilen → „Zum Home-Bildschirm“.
+3. **iPhone:** URL (z. B. `https://plotec.github.io/gradient/`) in Safari → Teilen → „Zum Home-Bildschirm“.
 4. **Automatische Updates (gewünscht):** Der Service Worker (`sw.js`) arbeitet „network-first“ für App-Dateien →
    bei geöffneter Internetverbindung lädt die App beim Start die neueste Version. Bei Änderungen trotzdem
    `VERSION` in `sw.js` hochzählen (aktuell `formkurve-v6`). Optional noch einbauen: Hinweis „Neue Version – neu laden“.

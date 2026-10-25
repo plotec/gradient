@@ -100,7 +100,7 @@ export function renderDashboard() {
 
   return `
     <div class="page-head">
-      <div class="brand">${logoSvg()}Formkurve</div>
+      <div class="brand">${logoSvg()}Gradient</div>
       <div class="row" style="gap:8px">
         <button class="pill-chip" data-act="points-open" title="Punkte diese Woche" style="cursor:pointer">${icon('star')}${fmt(computePoints().week)}</button>
         <span class="pill-chip" title="Tage in Folge aktiv">${icon('flame')}${streak}</span>
@@ -110,7 +110,7 @@ export function renderDashboard() {
     <div><h1 style="font-size:30px;font-weight:500;margin:6px 0 0;letter-spacing:-.01em">Dein Fortschritt</h1><div class="muted" style="font-size:15.5px;margin-top:2px">Kleine Schritte, große Wirkung.</div></div>
     ${!storageWorks() ? '<div class="card" style="border-color:var(--bad)"><b>Speichern nicht möglich.</b><span class="small muted">Der Browser blockiert den Speicher (z. B. privater Modus). Einträge gehen beim Schließen verloren.</span></div>' : ''}
     ${isEmpty ? `<div class="card flat"><div class="stack" style="gap:8px;text-align:center;padding:6px">
-      <b style="font-weight:500">Willkommen bei Formkurve</b>
+      <b style="font-weight:500">Willkommen bei Gradient</b>
       <span class="small muted">Trag morgens dein Gewicht ein, logge dein Essen und starte dein erstes Training – über den Plus-Button geht alles mit einem Tipp. Zum Ausprobieren kannst du Beispieldaten laden.</span>
       <button class="btn sm" data-act="demo-load" style="align-self:center">Beispieldaten ansehen</button></div></div>` : ''}
 
@@ -428,7 +428,7 @@ function openSettings() {
             <div class="small muted num">${state.workouts.length} Trainings · ${Object.keys(state.diary).length} Ernährungstage · ${Object.keys(state.weights).length} Gewichte · ${state.foods.length} Lebensmittel</div>
             <button class="btn danger" data-act="data-reset">${icon('trash')}Alle Daten löschen</button>
           </div>
-          <p class="tiny faint" style="text-align:center">Formkurve · Onlinesuche: Open Food Facts (ODbL) · Nährwertdatenbank: BLS 4.0, Max Rubner-Institut (CC BY 4.0)</p>`,
+          <p class="tiny faint" style="text-align:center">Gradient · Onlinesuche: Open Food Facts (ODbL) · Nährwertdatenbank: BLS 4.0, Max Rubner-Institut (CC BY 4.0)</p>`,
       };
     },
   });
@@ -451,10 +451,10 @@ onAct({
   },
   'data-export': async () => {
     const json = JSON.stringify(state);
-    const name = `formkurve-backup-${todayKey()}.json`;
+    const name = `gradient-backup-${todayKey()}.json`;
     const file = new File([json], name, { type: 'application/json' });
     try {
-      if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'Formkurve Backup' }); return; }
+      if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'Gradient Backup' }); return; }
     } catch (e) { if (e.name === 'AbortError') return; }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(file);
@@ -525,7 +525,7 @@ onChange({
       applyTheme();
       toast('Backup wiederhergestellt');
     } catch (e) {
-      toast('Datei ist kein gültiges Formkurve-Backup');
+      toast('Datei ist kein gültiges Gradient-Backup');
     }
     el.value = '';
   },

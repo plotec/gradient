@@ -16,7 +16,7 @@ export function showLogin(onDone) {
     const name = root.querySelector('#auth-name')?.value ?? '';
     root.innerHTML = `
       <div class="auth">
-        <div class="brand" style="font-size:30px">${logoSvg()}Formkurve</div>
+        <div class="brand" style="font-size:30px">${logoSvg()}Gradient</div>
         <div><h1 class="auth-title">${mode === 'login' ? 'Willkommen zurück' : 'Account anlegen'}</h1>
           <p class="muted" style="margin:6px 0 0">${mode === 'login' ? 'Melde dich mit deinem Namen und Passwort an.' : 'Deine Übungen, Mahlzeiten und Werte werden unter diesem Account gespeichert.'}</p></div>
         <form class="stack" data-submit="auth-submit" id="auth-form" autocomplete="on">

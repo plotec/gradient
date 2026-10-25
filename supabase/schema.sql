@@ -1,4 +1,4 @@
--- Formkurve: Tabelle für die Daten je Account (einmal im Supabase SQL-Editor ausführen)
+-- Gradient: Tabelle für die Daten je Account (einmal im Supabase SQL-Editor ausführen)
 create table if not exists public.user_data (
   user_id uuid primary key references auth.users (id) on delete cascade,
   data jsonb not null,

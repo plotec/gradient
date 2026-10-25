@@ -1,4 +1,4 @@
-# Formkurve
+# Gradient
 
 Persönliche Fitness-App fürs Handy: Training (wie Alpha Progression), Ernährung (wie MyFitnessPal), Morgengewicht, Habits und ein Dashboard mit Kalorienverbrauch-Berechnung. Läuft als installierbare Web-App (PWA), komplett offline, Daten bleiben auf dem Gerät.
 
