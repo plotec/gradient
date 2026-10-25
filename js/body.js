@@ -115,7 +115,7 @@ onAct({
     if (next > todayKey()) return;
     bodyDate = next; rerender();
   },
-  'body-goto': (el) => { bodyDate = el.dataset.k; rerender(); document.getElementById('view').scrollTo({ top: 0, behavior: 'smooth' }); },
+  'body-goto': (el) => { bodyDate = el.dataset.k; rerender(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
   'body-range': (el) => { range = +el.dataset.d; rerender(); },
   'weight-save': () => {
     const v = parseNum(document.getElementById('weight-in').value);
