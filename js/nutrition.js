@@ -390,15 +390,29 @@ function openScanner(onCode) {
       await video.play();
       msg('Halte den Barcode ins Bild – etwa 15 cm Abstand.');
       const det = new Detector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] });
+      // Kamerabild selbst in ein Canvas holen (längste Seite max. 1600 px) und als ImageData
+      // übergeben: der Umweg über das <video> war auf dem iPhone unzuverlässig.
+      const cv = document.createElement('canvas');
+      const cx = cv.getContext('2d', { willReadFrequently: true });
+      let frames = 0, fails = 0, lastErr = '';
       const loop = async () => {
         if (stopped) return;
         try {
-          if (video.readyState >= 2) {
-            const codes = await det.detect(video);
+          const vw = video.videoWidth, vh = video.videoHeight;
+          if (vw && vh) {
+            const k = Math.min(1, 1600 / Math.max(vw, vh));
+            cv.width = Math.round(vw * k); cv.height = Math.round(vh * k);
+            cx.drawImage(video, 0, 0, cv.width, cv.height);
+            const codes = await det.detect(cx.getImageData(0, 0, cv.width, cv.height));
+            frames++;
             if (codes[0]?.rawValue) { s.found(codes[0].rawValue); return; }
+            if (frames % 10 === 0) msg(`Suche Barcode … (${frames} Bilder geprüft, ${cv.width}×${cv.height})`);
           }
-        } catch {}
-        raf = setTimeout(loop, 120);
+        } catch (e) {
+          fails++; lastErr = e?.message || String(e);
+          if (fails % 5 === 1) msg(`Scanner-Fehler: ${lastErr}`);
+        }
+        raf = setTimeout(loop, 100);
       };
       loop();
     } catch (e) {
