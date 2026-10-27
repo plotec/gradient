@@ -99,7 +99,7 @@ Spracherkennung: Chrome/Android direkt in der App; auf dem iPhone ggf. das Mikro
 
 ## Lebensmittel-Datenbank (BLS 4.0)
 
-Der [Bundeslebensmittelschlüssel](https://blsdb.de) des Max Rubner-Instituts (rund 7.100 Lebensmittel, Lizenz CC BY 4.0) wird beim Veröffentlichen über GitHub Actions automatisch geladen (`tools/fetch_bls.py` → `data/bls.json`). Klappt der Download nicht, kann die ZIP-Datei von blsdb.de auch unter **Einstellungen → Lebensmittel-Datenbank → BLS-Datei importieren** eingelesen werden.
+Der [Bundeslebensmittelschlüssel](https://blsdb.de) des Max Rubner-Instituts (rund 7.100 Lebensmittel, Lizenz CC BY 4.0) liegt fest im Repo (`data/bls.json`) und steht damit jedem Account sofort zur Verfügung; beim Veröffentlichen frischt GitHub Actions sie über `tools/fetch_bls.py` auf. Klappt der Download nicht, kann die ZIP-Datei von blsdb.de auch unter **Einstellungen → Lebensmittel-Datenbank → BLS-Datei importieren** eingelesen werden.
 
 Quelle: Max Rubner-Institut (2025): Bundeslebensmittelschlüssel (BLS), Version 4.0. Karlsruhe.
 

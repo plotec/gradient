@@ -212,7 +212,7 @@ function addFoodList(ui) {
   }
   // online
   if (ui.onlineState === 'loading') return '<div class="empty">Suche in Open Food Facts …</div>';
-  if (ui.onlineState === 'error') return `<div class="empty">Online-Suche nicht erreichbar. Prüfe die Internetverbindung oder lege das Lebensmittel selbst an.<br><button class="link" data-act="food-new">Lebensmittel anlegen</button></div>`;
+  if (ui.onlineState === 'error') return `<div class="empty">Open Food Facts antwortet gerade nicht (die Suche dort ist oft überlastet). In einer Minute nochmal Enter drücken – oder unten aus der Lebensmitteldatenbank wählen.<br><button class="link" data-act="food-new">Lebensmittel anlegen</button></div>${blsRows(ui)}`;
   if (ui.onlineState === 'idle') return '<div class="empty">Suchbegriff eingeben und Enter drücken. Durchsucht die freie Datenbank Open Food Facts (Supermarktprodukte, Marken).</div>';
   if (!ui.online.length) return noMatch(ui);
   return ui.online.map((f, i) => `<button class="li" data-act="af-pick-online" data-i="${i}">
@@ -311,10 +311,18 @@ async function runOnline(s) {
   s.ui.onlineState = 'loading';
   refreshAfList();
   try {
-    const url = `https://de.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=40&fields=${OFF_FIELDS}`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new Error(res.status);
-    const data = await res.json();
+    // Die Suche von Open Food Facts fällt öfter kurz aus (503): einmal über den zweiten Server nachfassen.
+    const path = `/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=40&fields=${OFF_FIELDS}`;
+    let data = null, lastErr = null;
+    for (const host of ['https://de.openfoodfacts.org', 'https://world.openfoodfacts.org']) {
+      try {
+        const res = await fetch(host + path, { headers: { Accept: 'application/json' } });
+        if (!res.ok) throw new Error(res.status);
+        data = await res.json();
+        break;
+      } catch (e) { lastErr = e; await new Promise((r) => setTimeout(r, 600)); }
+    }
+    if (!data) throw lastErr;
     s.ui.online = (data.products || []).map(offToFood).filter(Boolean);
     s.ui.onlineState = 'done';
   } catch (e) {

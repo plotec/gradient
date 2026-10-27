@@ -10,6 +10,7 @@ Aufruf:
 
 Schlägt der Download fehl, endet das Skript ohne Fehler (die App funktioniert auch ohne).
 """
+import html as htmlmod
 import io
 import json
 import re
@@ -28,7 +29,8 @@ def get(url):
 
 
 def find_zip_url():
-    html = get(DOWNLOAD_PAGE).decode("utf-8", "replace")
+    # Der Link steht HTML-kodiert auf der Seite (&#47; statt /) – erst auflösen.
+    html = htmlmod.unescape(get(DOWNLOAD_PAGE).decode("utf-8", "replace"))
     links = re.findall(r'href="([^"]+\.zip[^"]*)"', html)
     de = [l for l in links if "_DE" in l] or links
     if not de:
