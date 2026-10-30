@@ -33,21 +33,9 @@ Unter **Übersicht → Kalorienverbrauch → Ziel ändern** (oder Körper / Ern�
 
 Aus deinem berechneten Umsatz ergibt sich die empfohlene Zufuhr (1 kg ≈ 7.700 kcal). Solange noch zu wenig Daten für die Berechnung da sind, trägst du einen Schätzwert ein. Mit **„Automatisch anpassen“** wird das Kalorienziel einmal täglich an den neuen Umsatz angepasst (Makros: Ausgleich über Kohlenhydrate). Optional: Zielgewicht mit voraussichtlicher Dauer. Ob du dein Wochenziel triffst, wird jeden Sonntag am geglätteten Gewichtstrend gemessen (± 0,25 kg).
 
-## Punkte & Rangliste
+## Sterne
 
-| Wofür | Punkte |
-|---|---|
-| Training nach Plan erledigt | 30 |
-| Zusätzliches Training | 15 |
-| Übung gesteigert (10RM höher als letztes Mal) | 10 |
-| Neuer Rekord bei einer Übung | 15 |
-| Ernährung geloggt / im Zielbereich | 5 / 20 |
-| Morgens gewogen | 5 |
-| Wochenziel Gewicht getroffen | 40 |
-| Alle Supplements / je Habit | 5 / 3 |
-| Perfekter Tag (alles Fällige geschafft) | 15 |
-
-Progression zählt pro Training höchstens 60 Punkte. Die Rangliste zeigt Woche, Monat und Gesamt. Mit Cloud-Accounts sehen alle Freunde im selben Supabase-Projekt die gemeinsame Rangliste (Tabelle `leaderboard` aus `supabase/schema.sql`), ohne Cloud alle Accounts auf dem Gerät.
+Im Training gibt es Sterne für Fortschritt, je Übung: **1 Stern** für eine Steigerung gegenüber dem letzten Mal, **3 Sterne** für einen neuen Bestwert (10RM, Höchstgewicht oder bei Körpergewicht Wiederholungen). Beim ersten Mal gibt es keine, das ist die Messlatte. Beim Abschließen zählt der große Stern die Summe hoch.
 
 ## Kalorienverbrauch (TDEE)
 
@@ -77,7 +65,7 @@ Jeder Nutzer meldet sich mit **Name + Passwort** an; Übungen, Trainings, Ernäh
 Einrichtung (einmalig, ca. 10 Minuten):
 
 1. Auf [supabase.com](https://supabase.com) ein Projekt anlegen.
-2. **SQL Editor** → Inhalt von `supabase/schema.sql` ausführen (legt die Tabellen für Daten und Rangliste mit Zugriffsschutz an).
+2. **SQL Editor** → Inhalt von `supabase/schema.sql` ausführen (legt die Tabellen mit Zugriffsschutz an).
 3. **Authentication → Sign In / Providers → Email:** „Confirm email“ **ausschalten** (Login läuft über Name + Passwort, nicht über E-Mail).
 4. **Project Settings → API:** „Project URL“ und „anon public key“ in `js/config.js` eintragen, committen.
 

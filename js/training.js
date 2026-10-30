@@ -143,7 +143,7 @@ function renderHistory() {
     const sets = sum(w.exercises, (e) => e.sets.length);
     const vol = sum(w.exercises, (e) => sum(e.sets, setVolume));
     html += `<button class="li" data-act="wo-detail" data-id="${w.id}">
-      <div class="grow"><div class="t">${esc(w.name)}</div><div class="s">${fmtDay(dayKey(d))} · ${fmtDuration(w.endedAt - w.startedAt)} · ${sets} Sätze</div></div>
+      <div class="grow"><div class="t">${esc(w.name)}</div><div class="s">${fmtDay(dayKey(d))} · ${fmtDuration(w.endedAt - w.startedAt)} · ${sets} Sätze${workoutStars(w).total ? ` · <span class="star-txt">★ ${workoutStars(w).total}</span>` : ''}</div></div>
       <div class="r num small muted">${fmt(vol)} kg</div></button>`;
   }
   return html + '</div></div>';
@@ -561,7 +561,7 @@ function renderWorkout() {
     body: `
       <div class="row between">
         <div class="row" style="gap:8px;align-items:baseline"><span class="wo-timer" data-clock="elapsed">${fmtClock(Date.now() - aw.startedAt)}</span><span class="tiny muted">Trainingszeit</span></div>
-        <div class="small muted num">${doneCount(aw)}/${totalCount(aw)} Sätze · ${fmt(vol)} kg</div>
+        <div class="small muted num">${doneCount(aw)}/${totalCount(aw)} Sätze · ${fmt(vol)} kg · <span class="wo-stars" id="wo-stars">★ ${liveStars(aw).total}</span></div>
       </div>
       ${aw.exercises.length ? exercisePanel(aw, aw.exercises[aw.current], aw.current)
         : `<div class="card flat"><div class="stack" style="gap:10px;text-align:center;padding:8px"><span class="muted">Noch keine Übungen in diesem Training.</span>
@@ -786,6 +786,7 @@ onAct({
     const i = +el.dataset.i, j = +el.dataset.j;
     const ex = aw.exercises[i];
     const s = ex.sets[j];
+    const starsBefore = liveStars(aw).total;
     // Werte aus den Feldern übernehmen (falls noch nicht per input gespeichert)
     s.done = !s.done;
     s.doneAt = s.done ? Date.now() : null;
@@ -810,6 +811,13 @@ onAct({
       try { navigator.vibrate?.(30); } catch {}
     }
     save();
+    const now = liveStars(aw);
+    if (now.total > starsBefore) {
+      document.getElementById('wo-stars')?.classList.add('pop');
+      const row = now.rows.find((r) => r.exerciseId === ex.exerciseId);
+      toast(`+${now.total - starsBefore} ★ ${row?.label || ''}: ${exById(ex.exerciseId)?.name || ''}`);
+      try { navigator.vibrate?.([20, 40, 20]); } catch {}
+    }
   },
   'set-add': (el) => {
     const ex = state.activeWorkout.exercises[+el.dataset.i];
@@ -982,6 +990,62 @@ async function finishWorkout() {
   openSummary(w.id, true);
 }
 
+/**
+ * Sterne je Übung: 1 für eine Steigerung gegenüber dem letzten Mal, 3 für einen neuen Bestwert.
+ * Ohne Vorwerte gibt es keine, das erste Mal ist die Messlatte.
+ */
+function starsFor(exercises, before) {
+  const rows = [];
+  for (const e of exercises) {
+    const sets = e.sets.filter((s) => s.reps > 0 && (s.done || s.done === undefined));
+    if (!sets.length) continue;
+    const hist = exerciseHistory(e.exerciseId, before);
+    if (!hist.length) continue;
+    const best = bestE10(sets, e10);
+    const lastSets = hist[hist.length - 1].sets;
+    const maxW = Math.max(...sets.map((s) => s.weight || 0));
+    const maxR = Math.max(...sets.map((s) => s.reps));
+    const allW = Math.max(...hist.flatMap((h) => h.sets.map((s) => s.weight || 0)));
+    const noWeight = !maxW && !allW; // Übung mit Körpergewicht: Wiederholungen zählen
+    const record = noWeight ? maxR > Math.max(...hist.flatMap((h) => h.sets.map((s) => s.reps)))
+      : best > Math.max(...hist.map((h) => bestE10(h.sets, e10))) + 0.01 || maxW > allW;
+    const better = noWeight ? maxR > Math.max(...lastSets.map((s) => s.reps)) : best > bestE10(lastSets, e10) + 0.01;
+    if (!record && !better) continue;
+    rows.push({ exerciseId: e.exerciseId, name: exById(e.exerciseId)?.name || 'Gelöschte Übung', stars: record ? 3 : 1, label: record ? 'Rekord' : 'Steigerung' });
+  }
+  return { total: sum(rows, (r) => r.stars), rows };
+}
+export const workoutStars = (w) => starsFor(w.exercises, state.workouts.filter((x) => x.startedAt < w.startedAt));
+const liveStars = (aw) => starsFor(aw.exercises.map((e) => ({ exerciseId: e.exerciseId, sets: e.sets.filter((s) => s.done) })), state.workouts);
+
+const STAR_PATH = 'M100 14c6 0 11 3 14 9l21 43 47 7c14 2 19 19 9 29l-34 33 8 47c2 14-12 24-25 18l-40-22-40 22c-13 6-27-4-25-18l8-47-34-33c-10-10-5-27 9-29l47-7 21-43c3-6 8-9 14-9z';
+function starBadge(n, fresh) {
+  return `<div class="star-badge ${fresh ? 'go' : ''} ${n ? '' : 'none'}">
+    ${fresh && n ? `<div class="sparks" aria-hidden="true">${Array.from({ length: 12 }, (_, i) => `<i style="--a:${i * 30}deg;--d:${i % 2 ? 92 : 118}px"></i>`).join('')}</div>` : ''}
+    <svg viewBox="0 0 200 200" aria-hidden="true"><defs><linearGradient id="star-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd65c"/><stop offset="1" stop-color="#f7a01e"/></linearGradient></defs><path d="${STAR_PATH}" fill="${n ? 'url(#star-g)' : 'var(--surface-2)'}"/></svg>
+    <span class="star-num" id="star-num" aria-label="${n} Sterne">${n}</span>
+  </div>`;
+}
+/** Zahl von 0 hochzählen, am Ende springt der Stern kurz. */
+function countStars(root, n) {
+  const el = root.querySelector('#star-num');
+  const badge = root.querySelector('.star-badge');
+  if (!el || !n) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { badge.classList.add('hit'); return; }
+  const delay = 420, dur = Math.min(1700, 650 + n * 110);
+  const t0 = performance.now() + delay;
+  el.textContent = '0';
+  const tick = (t) => {
+    const f = Math.max(0, Math.min(1, (t - t0) / dur));
+    const eased = 1 - (1 - f) ** 3;
+    const v = Math.round(eased * n);
+    if (el.textContent !== String(v)) { el.textContent = v; try { navigator.vibrate?.(6); } catch {} }
+    if (f < 1) requestAnimationFrame(tick);
+    else { badge.classList.add('hit'); try { navigator.vibrate?.([30, 50, 60]); } catch {} }
+  };
+  requestAnimationFrame(tick);
+}
+
 /** Vergleicht ein Training mit allen Trainings davor. */
 export function analyzeWorkout(w) {
   const before = state.workouts.filter((x) => x.startedAt < w.startedAt);
@@ -1025,21 +1089,27 @@ export function analyzeWorkout(w) {
 function openSummary(id, fresh = false) {
   openSheet({
     id: 'wo-summary',
+    afterRender: (sh, first) => {
+      const w = state.workouts.find((x) => x.id === id);
+      if (first && fresh && w) countStars(sh.el, workoutStars(w).total);
+    },
     render: () => {
       const w = state.workouts.find((x) => x.id === id);
       if (!w) return null;
       const a = analyzeWorkout(w);
       const volPct = a.prevVolume ? ((a.volume - a.prevVolume) / a.prevVolume) * 100 : null;
+      const st = workoutStars(w);
       return {
         title: fresh ? 'Zusammenfassung' : w.name,
         closeX: fresh,
         right: fresh ? '<span style="width:40px"></span>' : `<button class="icon-btn plain" data-act="wo-delete" data-id="${w.id}" aria-label="Löschen">${icon('trash')}</button>`,
         body: `
           <div class="summary-hero">
-            <div class="trophy">${icon(a.prs.length ? 'trophy' : 'check')}</div>
-            <h2>${fresh ? (a.prs.length ? 'Starkes Training!' : 'Training gespeichert') : esc(w.name)}</h2>
+            ${starBadge(st.total, fresh)}
+            <h2>${fresh ? (st.total ? `${st.total} ${st.total === 1 ? 'Stern' : 'Sterne'} gesammelt` : 'Training gespeichert') : esc(w.name)}</h2>
             <div class="muted small">${esc(w.name)} · ${fmtDay(dayKey(new Date(w.startedAt)), { long: true })}</div>
           </div>
+          ${st.rows.length ? `<div class="card star-list">${st.rows.map((r) => `<div class="row between"><span class="ellipsis">${esc(r.name)}</span><span class="star-row"><span class="muted small">${r.label}</span><b>+${r.stars} ★</b></span></div>`).join('')}</div>` : ''}
           <div class="grid2">
             <div class="stat"><span class="lbl">Dauer</span><span class="mid-num">${fmtClock(a.duration)}</span></div>
             <div class="stat"><span class="lbl">Sätze</span><span class="mid-num">${a.sets}</span></div>

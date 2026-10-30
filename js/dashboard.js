@@ -4,7 +4,7 @@ import { esc, fmt, fmtMax, signed, parseNum, todayKey, addDays, parseKey, dayKey
 import { icon, onAct, onChange, openSheet, closeSheet, topSheet, redrawSheet, confirmDialog, toast } from './ui.js';
 import { lineChart, barChart } from './charts.js';
 import { goalNumbers, goalLabel, targetIntake, openGoalSheet } from './goals.js';
-import { computePoints, leaderboardCard } from './points.js';
+import { workoutStars } from './training.js';
 import { dayStatus, rate, yearStatuses, supplementHabits, otherHabits, plannedFor } from './success.js';
 import { currentSession, logout, changePassword, cloudEnabled, getSyncStatus, onSyncStatus, AuthError } from './cloud.js';
 import { loadBls, blsCount, importBlsFile, BLS_CREDIT } from './foods-db.js';
@@ -117,7 +117,7 @@ export function renderDashboard() {
       <div class="hero-top">
         <span class="flame-big">${FLAME}</span>
         <div class="grow"><div class="hero-lbl">Serie</div><div class="hero-n">${streak}<small>${streak === 1 ? 'Tag' : 'Tage'}</small></div></div>
-        <button class="pill-chip" data-act="points-open" title="Punkte diese Woche">${icon('star')}${fmt(computePoints().week)}</button>
+        <button class="pill-chip" data-act="goto" data-tab="training" title="Sterne diese Woche">${icon('star')}${fmt(sum(state.workouts.filter((w) => dayKey(new Date(w.startedAt)) >= monday), (w) => workoutStars(w).total))}</button>
       </div>
       ${weekRow(monday, today)}
       <button class="hero-goal" data-act="goto" data-tab="nutrition">
@@ -163,8 +163,6 @@ export function renderDashboard() {
     ${successCard()}
 
     ${tdeeCard()}
-
-    ${leaderboardCard()}
 
     <h2 class="sec">Verlauf</h2>
     ${seg}

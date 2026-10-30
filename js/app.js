@@ -4,7 +4,6 @@ import { icon, onAct, redrawSheets, unlockAudio, closeAllSheets, toast, menuDial
 import { currentSession, pullAndMerge, schedulePush } from './cloud.js';
 import { showLogin } from './auth.js';
 import { autoAdjustGoal } from './goals.js';
-import { schedulePublish, invalidateBoard } from './points.js';
 import { renderTraining, openWorkout } from './training.js';
 import { renderNutrition, openAddFood, setNutDate, voiceForMeal } from './nutrition.js';
 import { renderBody, resetBodyDate } from './body.js';
@@ -30,7 +29,6 @@ function renderTabbar() {
 
 function goto(next) {
   closeAllSheets();
-  if (next === 'dashboard') invalidateBoard();
   tab = next;
   try { localStorage.setItem('formkurve-tab', tab); } catch {}
   history.replaceState(null, '', `#${tab}`);
@@ -137,8 +135,7 @@ async function repsRepairNotice() {
 
 function start(session, { adoptLegacy = false } = {}) {
   initStore(session.userId, { adoptLegacy });
-  setPersistHook(() => { schedulePush(); schedulePublish(); });
-  schedulePublish();
+  setPersistHook(() => schedulePush());
   applyTheme();
   render();
   if (state.activeWorkout && tab === 'training') openWorkout();
