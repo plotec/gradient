@@ -19,8 +19,8 @@ export function renderBody() {
   const isToday = bodyDate === todayKey();
   const supps = state.habits.filter((h) => h.supplement);
   const allSupps = supps.length && supps.every((h) => done.has(h.id));
-  const habitRow = (h) => `<button class="habit ${done.has(h.id) ? 'on' : ''}" style="--hc:${h.color}" data-act="habit-toggle" data-id="${h.id}">
-          <span class="box">${icon('check')}</span><span class="t">${esc(h.name)}</span>${streak(h.id) > 1 ? `<span class="tiny muted">${streak(h.id)} Tage in Folge</span>` : ''}</button>`;
+  const habitRow = (h) => `<button class="hb ${done.has(h.id) ? 'on' : ''}" style="--hc:${h.color}" data-act="habit-toggle" data-id="${h.id}">
+          <span class="ellipsis">${esc(h.name)}</span>${done.has(h.id) ? icon('check') : streak(h.id) > 1 ? `<span class="tiny">${streak(h.id)}</span>` : ''}</button>`;
   return `
     <div class="page-head"><div><h1>Körper</h1><div class="sub">Gewicht & tägliche Habits</div></div></div>
     <div class="date-nav">
@@ -47,13 +47,13 @@ export function renderBody() {
 
     <div class="card">
       <div class="card-head"><h3>Habits</h3><button class="link" data-act="habits-manage">Bearbeiten</button></div>
-      <div>
-        <div class="habit ${w != null ? 'on' : ''}" style="--hc:var(--body)"><span class="box">${icon('check')}</span><span class="t">Gewogen</span><span class="tiny faint">automatisch</span></div>
+      <div class="hb-grid">
+        <span class="hb ${w != null ? 'on' : ''}" style="--hc:var(--body)"><span class="ellipsis">Gewogen</span>${w != null ? icon('check') : ''}</span>
         ${state.habits.filter((h) => !h.supplement).map(habitRow).join('')}
       </div>
       ${supps.length ? `<div class="row between" style="margin-top:4px"><span class="small muted" style="font-weight:500">Supplements · ${supps.filter((h) => done.has(h.id)).length}/${supps.length}</span>
         <button class="link small" data-act="supps-all" data-on="${allSupps ? 0 : 1}">${allSupps ? 'Alle zurücksetzen' : 'Alle abhaken'}</button></div>
-      <div>${supps.map(habitRow).join('')}</div>` : ''}
+      <div class="hb-grid">${supps.map(habitRow).join('')}</div>` : ''}
     </div>
 
     <div class="card">

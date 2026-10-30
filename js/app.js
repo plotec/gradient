@@ -1,6 +1,6 @@
 // Einstieg: Tabs, Rendering, Service Worker.
-import { state, subscribe, initStore, setPersistHook } from './store.js';
-import { icon, onAct, redrawSheets, unlockAudio, closeAllSheets, toast } from './ui.js';
+import { state, subscribe, initStore, setPersistHook, exById, save, undoRepsRepair } from './store.js';
+import { icon, onAct, redrawSheets, unlockAudio, closeAllSheets, toast, menuDialog } from './ui.js';
 import { currentSession, pullAndMerge, schedulePush } from './cloud.js';
 import { showLogin } from './auth.js';
 import { autoAdjustGoal } from './goals.js';
@@ -8,7 +8,7 @@ import { schedulePublish, invalidateBoard } from './points.js';
 import { renderTraining, openWorkout } from './training.js';
 import { renderNutrition, openAddFood, setNutDate, voiceForMeal } from './nutrition.js';
 import { renderBody, resetBodyDate } from './body.js';
-import { todayKey } from './utils.js';
+import { todayKey, esc, fmtDay, dayKey } from './utils.js';
 import { renderDashboard, applyTheme } from './dashboard.js';
 
 const TABS = [
@@ -118,6 +118,23 @@ document.addEventListener('visibilitychange', () => {
   render();
 });
 
+/** Einmalig zeigen, welche Wiederholungen im Verlauf korrigiert wurden. */
+async function repsRepairNotice() {
+  const r = state._repsRepair;
+  if (!r?.notice) return;
+  const when = (c) => { const w = state.workouts.find((x) => x.id === c.w); return w ? fmtDay(dayKey(new Date(w.startedAt))) : 'läuft'; };
+  const rows = r.changes.slice(0, 14).map((c) => `${esc(exById(c.ex)?.name || 'Übung')}, ${when(c)}: ${c.from} → <b>${c.to}</b>`).join('<br>');
+  const more = r.changes.length > 14 ? `<br>… und ${r.changes.length - 14} weitere` : '';
+  const pick = await menuDialog({
+    title: `${r.changes.length} Wiederholungen korrigiert`,
+    text: `Im Verlauf standen zusammengeklebte Zahlen. Es zählt jetzt jeweils die hintere Zahl, die Kraftkurven stimmen wieder.<br><br>${rows}${more}`,
+    options: [{ label: 'Passt so', value: 'ok' }, { label: 'Rückgängig machen', value: 'undo', danger: true }],
+    cancel: '',
+  });
+  if (pick === 'undo') { undoRepsRepair(); toast('Korrektur zurückgenommen'); return; }
+  if (pick === 'ok') { r.notice = false; save(); }
+}
+
 function start(session, { adoptLegacy = false } = {}) {
   initStore(session.userId, { adoptLegacy });
   setPersistHook(() => { schedulePush(); schedulePublish(); });
@@ -129,6 +146,7 @@ function start(session, { adoptLegacy = false } = {}) {
   if (adoptLegacy) toast('Deine bisherigen Daten wurden in den Account übernommen', 3500);
   const adjusted = autoAdjustGoal();
   if (adjusted) toast(`Kalorienziel an deinen Umsatz angepasst: ${adjusted.toLocaleString('de-DE')} kcal`, 3500);
+  repsRepairNotice();
 }
 
 const session = currentSession();

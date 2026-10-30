@@ -1,5 +1,5 @@
 // Bereich Training: Trainingstage, Übungen, laufendes Training, Zusammenfassung, Verlauf.
-import { state, save, exById, dayById, exerciseHistory, bestE10, lastSetsFor, lastSessionFor, sessionStrength, setVolume } from './store.js';
+import { state, save, exById, dayById, workoutDayKeys, exerciseHistory, bestE10, lastSetsFor, lastSessionFor, sessionStrength, setVolume } from './store.js';
 import { uid, esc, fmt, fmtMax, signed, parseNum, e10rm, round, fmtClock, fmtDuration, fmtDay, dayKey, sum, MONTHS, todayKey, addDays, parseKey, daysBetween } from './utils.js';
 import { icon, onAct, onInput, onChange, openSheet, closeSheet, confirmDialog, menuDialog, toast, beep, sheetOpen, topSheet } from './ui.js';
 import { lineChart } from './charts.js';
@@ -37,57 +37,60 @@ export function renderTraining() {
 const WD2 = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const slotName = (id) => (id == null ? 'Pause' : dayById(id)?.name || '?');
 
-function scheduleCard() {
-  const sc = state.settings.schedule;
+const DAY_COLORS = ['var(--accent)', 'var(--amber)', 'var(--body)', 'var(--habit)', '#8ec5ff', '#ff8fb3'];
+const dayColor = (id) => DAY_COLORS[Math.max(0, state.workoutDays.findIndex((d) => d.id === id)) % DAY_COLORS.length];
+
+/** Woche Mo–So: farbiger Punkt = Training fällig, Haken = erledigt. */
+function weekPlan() {
   const today = todayKey();
-  if (!sc.slots.length) {
-    return `<div class="card">
-      <div class="card-head"><h3>Trainingsrhythmus</h3><span class="chip">nicht festgelegt</span></div>
-      <div class="small muted">Leg fest, wie sich deine Trainingstage wiederholen, z. B. Torso → Limbs → Pause. Danach richten sich deine Erfolgskästchen: Ein ausgelassenes Training zählt als verpasst, Pausentage zählen nicht.</div>
-      <button class="btn primary" data-act="sched-edit">${icon('edit')}Rhythmus festlegen</button>
-    </div>`;
-  }
-  const strip = Array.from({ length: 7 }, (_, i) => {
-    const k = addDays(today, i);
+  const monday = addDays(today, -((new Date().getDay() + 6) % 7));
+  const done = workoutDayKeys();
+  const sc = state.settings.schedule;
+  const cells = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((n, i) => {
+    const k = addDays(monday, i);
     const p = plannedFor(k);
-    const name = p == null ? '–' : p === 'rest' ? 'Pause' : p.name;
-    return `<div class="sched-day ${i === 0 ? 'now' : ''} ${p === 'rest' || p == null ? 'rest' : ''}"><span class="wd">${i === 0 ? 'Heute' : WD2[parseKey(k).getDay()]}</span><span class="nm">${esc(name)}</span></div>`;
+    const due = p && p !== 'rest';
+    const tick = done.has(k);
+    const missed = due && !tick && k < today;
+    return `<span class="wk ${k === today ? 'today' : ''}" ${due ? `style="--dc:${dayColor(p.id)}"` : ''}>
+      <span class="wk-l">${n}</span>
+      <span class="wk-c ${tick ? 'done' : ''} ${due && !tick ? 'due' : ''} ${missed ? 'missed' : ''}">${tick ? icon('check') : due ? '<i></i>' : ''}</span>
+      <span class="wk-n ellipsis">${due ? esc(p.name) : ''}</span>
+    </span>`;
   }).join('');
-  const len = sc.slots.length;
-  return `<div class="card">
-    <div class="card-head"><div><h3>Trainingsrhythmus</h3><div class="small muted">${len}-Tage-Zyklus · ${sc.slots.filter((x) => x != null).length}× Training</div></div>
-      <button class="icon-btn sm" data-act="sched-edit" aria-label="Rhythmus bearbeiten">${icon('edit')}</button></div>
-    <div class="sched-strip">${strip}</div>
+  return `<div class="card week-card">
+    <div class="card-head"><h3>Diese Woche</h3><button class="link small" data-act="sched-edit">${sc.slots.length ? 'Rhythmus' : 'Rhythmus festlegen'}</button></div>
+    <div class="week">${cells}</div>
   </div>`;
 }
 
 function renderPlan() {
   const days = state.workoutDays;
   const todayPlan = plannedFor(todayKey());
+  const busy = state.activeWorkout ? 'disabled style="opacity:.5"' : '';
   if (!days.length) {
     return `<div class="card flat"><div class="stack" style="gap:10px;text-align:center;padding:8px">
       <b style="font-weight:500">Leg deine Trainingstage an</b>
       <span class="small muted">Zum Beispiel „Torso“ und „Limbs“. Jedem Tag gibst du deine Übungen. Danach legst du fest, in welchem Rhythmus du trainierst.</span>
       <button class="btn primary" data-act="day-new" style="align-self:center">${icon('plus')}Ersten Trainingstag anlegen</button></div></div>
-      <button class="btn" data-act="wo-start" data-id="" ${state.activeWorkout ? 'disabled style="opacity:.5"' : ''}>${icon('bolt')}Freies Training ohne Plan</button>`;
+      <button class="btn" data-act="wo-start" data-id="" ${busy}>${icon('bolt')}Freies Training ohne Plan</button>`;
   }
   return `
-    ${scheduleCard()}
-    ${days.map((d) => {
+    ${weekPlan()}
+    <div class="day-tiles">${days.map((d) => {
       const last = [...state.workouts].reverse().find((w) => w.dayId === d.id);
-      return `<div class="card day-card" ${todayPlan && todayPlan !== 'rest' && todayPlan.id === d.id ? 'style="border-color:var(--accent)"' : ''}>
-        <div class="card-head">
-          <div class="grow"><h3>${esc(d.name)} ${todayPlan && todayPlan !== 'rest' && todayPlan.id === d.id ? '<span class="chip good" style="vertical-align:2px;margin-left:4px">heute dran</span>' : ''}</h3>
-            <div class="small muted">${d.items.length} Übungen · ${sum(d.items, (i) => i.sets)} Sätze${last ? ` · zuletzt ${fmtDay(dayKey(new Date(last.startedAt)))}` : ''}</div></div>
-          <button class="icon-btn sm" data-act="day-edit" data-id="${d.id}" aria-label="Bearbeiten">${icon('edit')}</button>
-        </div>
-        <div class="ex-names">${d.items.map((i) => esc(exById(i.exerciseId)?.name || '?')).join(' · ') || 'Noch keine Übungen'}</div>
-        <button class="btn primary block" data-act="wo-start" data-id="${d.id}" ${state.activeWorkout ? 'disabled style="opacity:.5"' : ''}>${icon('play')}Training starten</button>
+      const isToday = todayPlan && todayPlan !== 'rest' && todayPlan.id === d.id;
+      return `<div class="day-tile ${isToday ? 'now' : ''}" style="--dc:${dayColor(d.id)}">
+        <button class="day-open" data-act="day-edit" data-id="${d.id}" aria-label="${esc(d.name)} bearbeiten">
+          <span class="day-name ellipsis">${esc(d.name)}</span>
+          <span class="day-sub">${isToday ? 'Heute dran' : last ? fmtDay(dayKey(new Date(last.startedAt))) : `${d.items.length} Übungen`}</span>
+        </button>
+        <button class="day-play" data-act="wo-start" data-id="${d.id}" ${busy} aria-label="${esc(d.name)} starten">${icon('play')}</button>
       </div>`;
-    }).join('')}
+    }).join('')}</div>
     <div class="grid2">
       <button class="btn" data-act="day-new">${icon('plus')}Trainingstag</button>
-      <button class="btn" data-act="wo-start" data-id="" ${state.activeWorkout ? 'disabled style="opacity:.5"' : ''}>${icon('bolt')}Freies Training</button>
+      <button class="btn" data-act="wo-start" data-id="" ${busy}>${icon('bolt')}Freies Training</button>
     </div>`;
 }
 
@@ -877,9 +880,39 @@ onAct({
   'wo-finish': () => finishWorkout(),
 });
 
+const setKey = (el) => (el.dataset.in === 'set-w' ? 'weight' : 'reps');
+const setVal = (el, txt) => { const n = parseNum(txt); return n == null ? null : el.dataset.in === 'set-w' ? n : Math.round(n); };
 onInput({
-  'set-w': (el) => updateSet(el, 'weight', parseNum(el.value)),
-  'set-r': (el) => { const n = parseNum(el.value); updateSet(el, 'reps', n == null ? null : Math.round(n)); },
+  'set-w': (el) => { if (editing?.id === el.id) editing.typed = el.value !== ''; updateSet(el, 'weight', setVal(el, el.value)); },
+  'set-r': (el) => { if (editing?.id === el.id) editing.typed = el.value !== ''; updateSet(el, 'reps', setVal(el, el.value)); },
+});
+
+// Beim Antippen wird das Feld leer, der alte Wert steht grau dahinter. Ohne Eingabe bleibt er stehen,
+// mit Eingabe gilt nur das Getippte (vorher wurde aus 8 und 9 die 89).
+let editing = null;
+function endEdit() {
+  const ed = editing;
+  editing = null;
+  const el = ed && document.getElementById(ed.id);
+  if (el && el.value === '' && ed.old !== '') { el.value = ed.old; updateSet(el, setKey(el), setVal(el, ed.old)); }
+}
+document.addEventListener('focusin', (e) => {
+  const el = e.target;
+  if (!el.matches?.('input[data-in="set-r"], input[data-in="set-w"]')) return;
+  if (editing?.id === el.id) { // nach dem Neuzeichnen wieder im selben Feld
+    if (!editing.typed) { el.value = ''; if (editing.old !== '') el.placeholder = editing.old; }
+    return;
+  }
+  if (editing) endEdit();
+  editing = { id: el.id, old: el.value, typed: false };
+  if (el.value !== '') el.placeholder = el.value;
+  el.value = '';
+});
+document.addEventListener('focusout', () => {
+  setTimeout(() => { if (editing && document.activeElement?.id !== editing.id) endEdit(); }, 0);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.matches?.('input[data-in="set-r"], input[data-in="set-w"]')) { e.preventDefault(); e.target.blur(); }
 });
 onChange({
   'set-q': (el) => updateSet(el, 'quality', el.value ? +el.value : null),

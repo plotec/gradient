@@ -195,7 +195,61 @@ function migrate(s) {
   }
   const SUPP = ['h-kreatin', 'h-vitd', 'h-omega'];
   for (const h of s.habits) if (h.supplement === undefined) h.supplement = SUPP.includes(h.id) || /kreatin|creatin|vitamin|omega|magnesium|zink|supplement|protein|ashwa|eisen/i.test(h.name);
+  if (!s._repsRepair) {
+    const changes = repairConcatReps(s);
+    s._repsRepair = { at: Date.now(), changes, notice: changes.length > 0 };
+  }
   return s;
+}
+
+/**
+ * Das Wiederholungsfeld behielt beim Tippen den vorbelegten Wert: aus 8 + 9 wurde 89, aus 10 + 11 wurde 1011.
+ * Richtig ist nur die hintere Zahl. Vorbelegt war der Wert vom letzten Mal oder aus dem Satz davor.
+ */
+function fixedReps(r, prefills) {
+  const txt = String(r);
+  for (const p of prefills) {
+    if (!(p > 0)) continue;
+    const ps = String(p);
+    if (r > 20 && txt.length > ps.length && txt.startsWith(ps)) {
+      const rest = +txt.slice(ps.length);
+      if (rest >= 1 && rest <= 40) return rest;
+    }
+  }
+  if (r < 50) return null; // ohne passenden Vorwert nur eindeutig unmögliche Zahlen anfassen
+  const two = +txt.slice(-2), one = +txt.slice(-1);
+  if (txt.length >= 3 && two >= 1 && two <= 40) return two;
+  return one >= 1 ? one : null;
+}
+export function repairConcatReps(s) {
+  const changes = [];
+  const lastRaw = {}, lastFixed = {};
+  const fixExercise = (e, wid) => {
+    const raw = e.sets.map((x) => x.reps);
+    e.sets.forEach((x, j) => {
+      const r = x.reps;
+      const at = (a) => (a?.length ? a[Math.min(j, a.length - 1)] : null);
+      const prefills = [at(lastRaw[e.exerciseId]), at(lastFixed[e.exerciseId]), j ? raw[j - 1] : null, j ? e.sets[j - 1].reps : null];
+      const to = r ? fixedReps(r, prefills) : null;
+      if (to != null && to !== r) { x.reps = to; changes.push({ w: wid, ex: e.exerciseId, j, from: r, to }); }
+    });
+    lastRaw[e.exerciseId] = raw;
+    lastFixed[e.exerciseId] = e.sets.map((x) => x.reps);
+  };
+  [...(s.workouts || [])].sort((a, b) => a.startedAt - b.startedAt).forEach((w) => w.exercises.forEach((e) => fixExercise(e, w.id)));
+  s.activeWorkout?.exercises.forEach((e) => fixExercise(e, s.activeWorkout.id));
+  return changes;
+}
+/** Korrektur zurücknehmen. */
+export function undoRepsRepair() {
+  for (const c of state._repsRepair?.changes || []) {
+    const w = state.workouts.find((x) => x.id === c.w) || (state.activeWorkout?.id === c.w ? state.activeWorkout : null);
+    const set = w?.exercises.find((e) => e.exerciseId === c.ex)?.sets[c.j];
+    if (set && set.reps === c.to) set.reps = c.from;
+  }
+  state._repsRepair.changes = [];
+  state._repsRepair.notice = false;
+  save();
 }
 
 export let state = defaults();

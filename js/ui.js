@@ -155,14 +155,14 @@ export function confirmDialog({ title, text = '', ok = 'OK', cancel = 'Abbrechen
 }
 
 /** Auswahl aus mehreren Optionen (Aktionsmenü). Liefert value oder null. */
-export function menuDialog({ title, options }) {
+export function menuDialog({ title, text = '', options, cancel = 'Abbrechen' }) {
   return new Promise((resolve) => {
     const wrap = document.createElement('div');
     wrap.className = 'dialog-wrap';
     wrap.innerHTML = `<div class="dialog" role="dialog">
-      ${title ? `<h3>${esc(title)}</h3>` : ''}
+      ${title ? `<h3>${esc(title)}</h3>` : ''}${text ? `<p>${text}</p>` : ''}
       <div class="stack" style="gap:6px">${options.map((o, i) => `<button class="btn block ${o.danger ? 'danger' : ''}" data-i="${i}" style="justify-content:flex-start">${o.icon ? icon(o.icon) : ''}${esc(o.label)}</button>`).join('')}</div>
-      <button class="btn ghost block" data-i="-1">Abbrechen</button>
+      ${cancel ? `<button class="btn ghost block" data-i="-1">${esc(cancel)}</button>` : ''}
     </div>`;
     wrap.addEventListener('click', (e) => {
       const b = e.target.closest('[data-i]');

@@ -17,10 +17,10 @@ function niceTicks(min, max, count = 4) {
 /**
  * series: [{ points:[{x(ms), y}], color, width?, dots?, dash? }]
  */
-export function lineChart({ series, height = 180, yDigits = 1, yPad = 0.1, yRight = false, xLabels = null }) {
+export function lineChart({ series, height = 180, width = 340, yDigits = 1, yPad = 0.1, yRight = false, xLabels = null }) {
   const all = series.flatMap((s) => s.points);
   if (all.length < 2) return '<div class="empty small">Noch zu wenig Daten für ein Diagramm.</div>';
-  const W = 340, H = height, L = yRight ? 6 : 34, R = yRight ? 36 : 8, T = 10, B = 22;
+  const W = width, H = height, L = yRight ? 6 : 34, R = yRight ? 36 : 8, T = 10, B = 22;
   const xs = [...all.map((p) => p.x), ...(xLabels || []).map((l) => l.x)], ys = all.map((p) => p.y);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
   let y0 = Math.min(...ys), y1 = Math.max(...ys);
@@ -65,9 +65,9 @@ let gid = 0;
  * gestrichelte Ziellinie, y-Achse rechts.
  * bars: [{ y, label, highlight? }]
  */
-export function barChart({ bars, goal, color = 'var(--accent)', hiColor = 'var(--amber)', height = 160 }) {
+export function barChart({ bars, goal, color = 'var(--accent)', hiColor = 'var(--amber)', height = 160, width = 340 }) {
   if (!bars.some((b) => b.y > 0)) return '<div class="empty small">Noch keine Einträge im Zeitraum.</div>';
-  const W = 340, H = height, L = 4, R = 40, T = 10, B = 24;
+  const W = width, H = height, L = 4, R = 34, T = 10, B = 24;
   const max = Math.max(goal || 0, ...bars.map((b) => b.y)) * 1.1;
   const { hi, ticks } = niceTicks(0, max, 3);
   const sy = (y) => T + (1 - y / hi) * (H - T - B);
