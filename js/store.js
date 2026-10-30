@@ -138,6 +138,7 @@ function defaults({ seed = false } = {}) {
       mealNames: ['Frühstück', 'Mittagessen', 'Nachmittag', 'Abendessen', 'Snacks'],
       goals: { kcal: 2500, protein: 180, carbs: 260, fat: 80 },
       restDefault: 120,
+      lockRest: true,
       weeklyRate: -0.5, // veraltet, siehe goal
       // Ziel: über Gewicht pro Woche oder Kalorienbilanz pro Tag
       goal: { mode: 'rate', rate: -0.5, balance: -300, targetWeight: null, auto: false, tdeeManual: null, lastAuto: null },
@@ -199,7 +200,29 @@ function migrate(s) {
     const changes = repairConcatReps(s);
     s._repsRepair = { at: Date.now(), changes, notice: changes.length > 0 };
   }
+  if (!s._limbsSync) {
+    // Einmalig: Pauls Limbs-Tag aus dem letzten Limbs-Training ergänzen.
+    const day = s.workoutDays.find((d) => /limbs|libms/i.test(d.name));
+    const last = day && [...s.workouts].filter((w) => w.dayId === day.id).sort((a, b) => b.startedAt - a.startedAt)[0];
+    s._limbsSync = { at: Date.now(), day: day?.name || null, added: last ? mergeWorkoutIntoDay(day, last) : [], found: !!last, notice: !!day };
+  }
   return s;
+}
+
+/** Übungen eines Trainings, die im Trainingstag fehlen, in der Reihenfolge des Trainings ergänzen. */
+export function mergeWorkoutIntoDay(day, w) {
+  const have = new Set(day.items.map((i) => i.exerciseId));
+  const added = [];
+  const items = w.exercises.map((e) => {
+    const known = day.items.find((i) => i.exerciseId === e.exerciseId);
+    if (known) return known;
+    added.push(e.exerciseId);
+    return { exerciseId: e.exerciseId, sets: e.sets.length || 3, reps: e.target || '8–12', rest: e.rest ?? null };
+  });
+  if (!added.length) return added;
+  const inWorkout = new Set(w.exercises.map((e) => e.exerciseId));
+  day.items = [...items, ...day.items.filter((i) => have.has(i.exerciseId) && !inWorkout.has(i.exerciseId))];
+  return added;
 }
 
 /**

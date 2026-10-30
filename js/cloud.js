@@ -14,6 +14,10 @@ const write = (k, v) => { try { v == null ? localStorage.removeItem(k) : localSt
 let session = read(SESSION_KEY);
 export const currentSession = () => session;
 
+// Spracheingabe gibt es nur für diese Accounts (Teil des Login-Namens).
+const VOICE_ACCOUNTS = ['paul'];
+export const voiceAllowed = () => !!session && VOICE_ACCOUNTS.some((n) => slugName(session.name).includes(n));
+
 /** "Max Müller" -> "max-mueller" (Login-Name, Groß/Klein egal). */
 export function slugName(name) {
   return String(name).trim().toLowerCase()

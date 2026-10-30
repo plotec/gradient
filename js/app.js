@@ -1,7 +1,7 @@
 // Einstieg: Tabs, Rendering, Service Worker.
 import { state, subscribe, initStore, setPersistHook, exById, save, undoRepsRepair } from './store.js';
 import { icon, onAct, redrawSheets, unlockAudio, closeAllSheets, toast, menuDialog } from './ui.js';
-import { currentSession, pullAndMerge, schedulePush } from './cloud.js';
+import { currentSession, pullAndMerge, schedulePush, voiceAllowed } from './cloud.js';
 import { showLogin } from './auth.js';
 import { autoAdjustGoal } from './goals.js';
 import { renderTraining, openWorkout } from './training.js';
@@ -42,7 +42,7 @@ function quickAdd() {
   wrap.className = 'dialog-wrap bottom';
   const aw = state.activeWorkout;
   const items = [
-    ['voice', 'Essen per Sprache eintragen', 'mic', 'var(--on-accent)', 'var(--accent)'],
+    ...(voiceAllowed() ? [['voice', 'Essen per Sprache eintragen', 'mic', 'var(--on-accent)', 'var(--accent)']] : []),
     ['train', aw ? 'Training fortsetzen' : 'Training starten', 'dumbbell', 'var(--accent)', 'var(--accent-soft)'],
     ['food', 'Essen eintragen', 'food', 'var(--amber)', 'var(--amber-soft)'],
     ['weight', 'Gewicht eintragen', 'scale', 'var(--body)', 'var(--body-soft)'],
@@ -133,6 +133,23 @@ async function repsRepairNotice() {
   if (pick === 'ok') { r.notice = false; save(); }
 }
 
+/** Einmalig melden, was am Limbs-Tag ergänzt wurde. */
+async function limbsNotice() {
+  const r = state._limbsSync;
+  if (!r?.notice) return;
+  const names = r.added.map((id) => esc(exById(id)?.name || 'Übung')).join('<br>');
+  await menuDialog({
+    title: r.added.length ? `${r.added.length} Übungen in „${esc(r.day)}“ ergänzt` : `„${esc(r.day)}“ ist unverändert`,
+    text: r.added.length ? names : r.found
+      ? 'Das letzte Training dieses Tages enthält keine weiteren Übungen.'
+      : 'Es gibt kein Training, das über diesen Tag gestartet wurde. Vermutlich lief es als freies Training.',
+    options: [{ label: 'OK', value: 'ok' }],
+    cancel: '',
+  });
+  r.notice = false;
+  save();
+}
+
 function start(session, { adoptLegacy = false } = {}) {
   initStore(session.userId, { adoptLegacy });
   setPersistHook(() => schedulePush());
@@ -143,7 +160,7 @@ function start(session, { adoptLegacy = false } = {}) {
   if (adoptLegacy) toast('Deine bisherigen Daten wurden in den Account übernommen', 3500);
   const adjusted = autoAdjustGoal();
   if (adjusted) toast(`Kalorienziel an deinen Umsatz angepasst: ${adjusted.toLocaleString('de-DE')} kcal`, 3500);
-  repsRepairNotice();
+  repsRepairNotice().then(limbsNotice);
 }
 
 const session = currentSession();

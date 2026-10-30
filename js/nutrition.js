@@ -6,6 +6,7 @@ import { ring } from './charts.js';
 import { nutritionCheck } from './success.js';
 import { loadBls, searchBls, blsCount } from './foods-db.js';
 import { openVoice } from './voice.js';
+import { voiceAllowed } from './cloud.js';
 import { targetIntake, goalLabel, openGoalSheet } from './goals.js';
 
 let nutDate = todayKey();
@@ -27,7 +28,7 @@ export function renderNutrition() {
   const left = g.kcal - t.kcal;
   return `
     <div class="page-head"><div><h1>Ernährung</h1><div class="sub">Tagebuch</div></div>
-      <div class="row" style="gap:8px"><button class="icon-btn" data-act="voice-nut" aria-label="Per Sprache eintragen" style="background:var(--accent);color:var(--on-accent)">${icon('mic')}</button>
+      <div class="row" style="gap:8px">${voiceAllowed() ? `<button class="icon-btn" data-act="voice-nut" aria-label="Per Sprache eintragen" style="background:var(--accent);color:var(--on-accent)">${icon('mic')}</button>` : ''}
       <button class="icon-btn" data-act="nut-goals" aria-label="Ziele">${icon('gear')}</button></div></div>
     <div class="date-nav">
       <button class="icon-btn" data-act="nut-day" data-d="-1" aria-label="Vorheriger Tag">${icon('left')}</button>
@@ -166,8 +167,8 @@ export function openAddFood(opts) {
           <div class="tabs-line">${tabs.map(([k, l]) => `<button class="${ui.tab === k ? 'on' : ''}" data-act="af-tab" data-k="${k}">${l}</button>`).join('')}</div>
         </div>`,
       body: `
-        ${ui.tab !== 'meals' ? `<div class="quick-row" style="grid-template-columns:repeat(${picking ? 2 : 4},1fr)">
-          ${picking ? '' : `<button class="btn" data-act="voice-af">${icon('mic')}Sprechen</button>`}
+        ${ui.tab !== 'meals' ? `<div class="quick-row" style="grid-template-columns:repeat(${picking ? 2 : voiceAllowed() ? 4 : 3},1fr)">
+          ${picking || !voiceAllowed() ? '' : `<button class="btn" data-act="voice-af">${icon('mic')}Sprechen</button>`}
           <button class="btn" data-act="scan-open">${icon('barcode')}Barcode</button>
           <button class="btn" data-act="food-new">${icon('plus')}Neu</button>
           ${picking ? '' : `<button class="btn" data-act="quick-open">${icon('bolt')}Schnell</button>`}

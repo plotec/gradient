@@ -1,9 +1,9 @@
 // Offline-Cache für die App-Dateien. Bei Änderungen VERSION erhöhen.
-const VERSION = 'gradient-v16';
+const VERSION = 'gradient-v18';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/store.js', 'js/utils.js', 'js/ui.js', 'js/charts.js',
-  'js/training.js', 'js/success.js', 'js/cloud.js', 'js/auth.js', 'js/config.js', 'js/foods-db.js', 'js/voice.js', 'js/goals.js', 'js/nutrition.js', 'js/body.js', 'js/dashboard.js',
+  'js/training.js', 'js/rest-audio.js', 'js/success.js', 'js/cloud.js', 'js/auth.js', 'js/config.js', 'js/foods-db.js', 'js/voice.js', 'js/goals.js', 'js/nutrition.js', 'js/body.js', 'js/dashboard.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 
@@ -17,9 +17,10 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   if (url.origin === location.origin) {
-    // App-Dateien: zuerst Netz (für Updates), offline aus dem Cache
+    // App-Dateien: zuerst Netz (für Updates), offline aus dem Cache. Immer frisch prüfen: eine alte
+    // Datei neben neuen ergäbe eine weiße Seite, und GitHub Pages erlaubt 10 Minuten Zwischenspeicher.
     e.respondWith(
-      fetch(e.request).then((res) => {
+      fetch(e.request.url, { cache: 'no-cache' }).then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(e.request, copy));
         return res;

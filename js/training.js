@@ -1,9 +1,10 @@
 // Bereich Training: Trainingstage, Übungen, laufendes Training, Zusammenfassung, Verlauf.
-import { state, save, exById, dayById, workoutDayKeys, exerciseHistory, bestE10, lastSetsFor, lastSessionFor, sessionStrength, setVolume } from './store.js';
+import { state, save, exById, dayById, workoutDayKeys, mergeWorkoutIntoDay, exerciseHistory, bestE10, lastSetsFor, lastSessionFor, sessionStrength, setVolume } from './store.js';
 import { uid, esc, fmt, fmtMax, signed, parseNum, e10rm, round, fmtClock, fmtDuration, fmtDay, dayKey, sum, MONTHS, todayKey, addDays, parseKey, daysBetween } from './utils.js';
 import { icon, onAct, onInput, onChange, openSheet, closeSheet, confirmDialog, menuDialog, toast, beep, sheetOpen, topSheet } from './ui.js';
 import { lineChart } from './charts.js';
 import { plannedFor } from './success.js';
+import { restLockStart, restLockStop, restLockActive } from './rest-audio.js';
 
 let sub = 'plan';
 let exSearch = '';
@@ -759,6 +760,18 @@ function rmHtml(s) {
   return v ? `${fmtMax(v, 1)}<small>kg</small>` : '<span class="faint">–</span>';
 }
 
+/** Restliche Pause als Anzeige auf dem Sperrbildschirm. */
+function lockRest(aw) {
+  const ex = aw.exercises[aw.current];
+  const open = ex?.sets.findIndex((x) => !x.done) ?? -1;
+  restLockStart({
+    seconds: Math.ceil((aw.restEnd - Date.now()) / 1000),
+    title: 'Pause',
+    artist: `${exById(ex?.exerciseId)?.name || aw.name}${open >= 0 ? ` · Satz ${open + 1} von ${ex.sets.length}` : ''}`,
+    skip: () => { const a = state.activeWorkout; if (a) a.restEnd = null; restLockStop(); save(); },
+  });
+}
+
 function nextFocus(aw, i) {
   // nächste offene Übung ab i, sonst erste offene überhaupt
   const open = (k) => aw.exercises[k] && aw.exercises[k].sets.some((s) => !s.done);
@@ -806,8 +819,8 @@ onAct({
       }
       const restSec = ex.rest ?? exById(ex.exerciseId)?.rest ?? state.settings.restDefault;
       const allDone = aw.exercises.every((e) => e.sets.every((x) => x.done));
-      if (restSec && !allDone) { aw.restEnd = Date.now() + restSec * 1000; aw.restTotal = restSec; aw.restBeeped = false; }
-      else aw.restEnd = null;
+      if (restSec && !allDone) { aw.restEnd = Date.now() + restSec * 1000; aw.restTotal = restSec; aw.restBeeped = false; lockRest(aw); }
+      else { aw.restEnd = null; restLockStop(); }
       try { navigator.vibrate?.(30); } catch {}
     }
     save();
@@ -876,9 +889,10 @@ onAct({
     aw.restEnd = Math.max(Date.now(), aw.restEnd) + d * 1000;
     aw.restTotal = Math.max(1, aw.restTotal + d);
     aw.restBeeped = aw.restEnd <= Date.now();
+    lockRest(aw);
     save();
   },
-  'rest-stop': () => { state.activeWorkout.restEnd = null; save(); },
+  'rest-stop': () => { state.activeWorkout.restEnd = null; restLockStop(); save(); },
   'wo-discard': async () => {
     if (!(await confirmDialog({ title: 'Training verwerfen?', text: 'Alle Eingaben dieses Trainings gehen verloren.', ok: 'Verwerfen', danger: true }))) return;
     state.activeWorkout = null;
@@ -940,6 +954,7 @@ function updateSet(el, key, val) {
 // Uhr: Trainingszeit + Pausentimer
 setInterval(() => {
   const aw = state.activeWorkout;
+  if (!aw?.restEnd) restLockStop();
   if (!aw) return;
   const t = fmtClock(Date.now() - aw.startedAt);
   document.querySelectorAll('[data-clock="elapsed"]').forEach((el) => { el.textContent = t; });
@@ -954,7 +969,7 @@ setInterval(() => {
     if (over && !aw.restBeeped) {
       aw.restBeeped = true;
       save({ silent: true });
-      beep(2);
+      if (!restLockActive()) beep(2); // sonst kommt der Ton aus der Tonspur
       if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
         try { new Notification('Pause vorbei', { body: 'Weiter mit dem nächsten Satz.', tag: 'rest' }); } catch {}
       }
@@ -986,6 +1001,14 @@ async function finishWorkout() {
   state.workouts.push(w);
   state.activeWorkout = null;
   closeSheet();
+  // Im Training ergänzte Übungen gehören sonst nur zu diesem einen Training
+  const day = w.dayId ? dayById(w.dayId) : null;
+  const fresh = day ? w.exercises.filter((e) => !day.items.some((i) => i.exerciseId === e.exerciseId)) : [];
+  if (fresh.length && await confirmDialog({
+    title: `In „${day.name}“ übernehmen?`,
+    text: `${fresh.map((e) => esc(exById(e.exerciseId)?.name || 'Übung')).join(', ')} ${fresh.length === 1 ? 'ist' : 'sind'} heute dazugekommen.`,
+    ok: 'Übernehmen', cancel: 'Nur heute',
+  })) mergeWorkoutIntoDay(day, w);
   save();
   openSummary(w.id, true);
 }
