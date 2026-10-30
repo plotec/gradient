@@ -1,9 +1,9 @@
 // Offline-Cache für die App-Dateien. Bei Änderungen VERSION erhöhen.
-const VERSION = 'gradient-v18';
+const VERSION = 'gradient-v19';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/store.js', 'js/utils.js', 'js/ui.js', 'js/charts.js',
-  'js/training.js', 'js/rest-audio.js', 'js/success.js', 'js/cloud.js', 'js/auth.js', 'js/config.js', 'js/foods-db.js', 'js/voice.js', 'js/goals.js', 'js/nutrition.js', 'js/body.js', 'js/dashboard.js',
+  'js/training.js', 'js/success.js', 'js/cloud.js', 'js/auth.js', 'js/config.js', 'js/foods-db.js', 'js/voice.js', 'js/goals.js', 'js/nutrition.js', 'js/body.js', 'js/dashboard.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 

@@ -138,7 +138,6 @@ function defaults({ seed = false } = {}) {
       mealNames: ['Frühstück', 'Mittagessen', 'Nachmittag', 'Abendessen', 'Snacks'],
       goals: { kcal: 2500, protein: 180, carbs: 260, fat: 80 },
       restDefault: 120,
-      lockRest: true,
       weeklyRate: -0.5, // veraltet, siehe goal
       // Ziel: über Gewicht pro Woche oder Kalorienbilanz pro Tag
       goal: { mode: 'rate', rate: -0.5, balance: -300, targetWeight: null, auto: false, tdeeManual: null, lastAuto: null },

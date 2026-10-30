@@ -512,8 +512,6 @@ function openSettings() {
           <h2 class="sec">Training</h2>
           <div class="card">
             <label class="field"><span>Standard-Pausenzeit nach einem Satz</span><select class="input" data-ch="set-rest">${[0, 60, 90, 120, 150, 180, 240].map((v) => `<option value="${v}" ${s.restDefault === v ? 'selected' : ''}>${v ? `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')} min` : 'Kein Pausentimer'}</option>`).join('')}</select></label>
-            <label class="row small" style="gap:8px"><input type="checkbox" data-ch="set-lockrest" ${state.settings.lockRest ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--accent)">Pausenzeit auf dem Sperrbildschirm</label>
-            <span class="tiny muted">Läuft über die Medienanzeige des iPhones. Musik aus anderen Apps kann dadurch pausieren.</span>
             <button class="btn sm" data-act="notif-ask" style="align-self:flex-start">${icon('timer')}Benachrichtigung bei Pausenende erlauben</button>
           </div>
           <h2 class="sec">Darstellung</h2>
@@ -620,7 +618,6 @@ onChange({
   },
   'set-rate': (el) => { state.settings.weeklyRate = +el.value; save(); },
   'set-rest': (el) => { state.settings.restDefault = +el.value; save(); },
-  'set-lockrest': (el) => { state.settings.lockRest = el.checked; save(); },
   'data-import': async (el) => {
     const file = el.files?.[0];
     if (!file) return;
