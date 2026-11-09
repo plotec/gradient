@@ -1,5 +1,5 @@
 // Einstieg: Tabs, Rendering, Service Worker.
-import { state, subscribe, initStore, setPersistHook, exById, save, undoRepsRepair } from './store.js';
+import { state, subscribe, initStore, setPersistHook, exById, save, undoRepsRepair, mealTotals } from './store.js';
 import { icon, onAct, redrawSheets, unlockAudio, closeAllSheets, toast, menuDialog } from './ui.js';
 import { currentSession, pullAndMerge, schedulePush, voiceAllowed } from './cloud.js';
 import { showLogin } from './auth.js';
@@ -7,7 +7,7 @@ import { autoAdjustGoal } from './goals.js';
 import { renderTraining, openWorkout } from './training.js';
 import { renderNutrition, openAddFood, setNutDate, voiceForMeal } from './nutrition.js';
 import { renderBody, resetBodyDate } from './body.js';
-import { todayKey, esc, fmtDay, dayKey } from './utils.js';
+import { todayKey, esc, fmt, fmtDay, dayKey } from './utils.js';
 import { renderDashboard, applyTheme } from './dashboard.js';
 
 const TABS = [
@@ -150,6 +150,27 @@ async function limbsNotice() {
   save();
 }
 
+/** Einmalig zeigen, welche Ziele und Mahlzeiten der Diätplan gesetzt hat. */
+async function dietNotice() {
+  const r = state._dietPlan1;
+  if (!r?.notice) return;
+  const g = state.settings.goals, b = r.before;
+  const rows = state.meals.filter((m) => m.name.startsWith('Plan: ')).map((m) => {
+    const t = mealTotals(m);
+    return `${esc(m.name.slice(6))}: ${fmt(t.kcal)} kcal · E ${fmt(t.protein)}`;
+  }).join('<br>');
+  await menuDialog({
+    title: 'Neuer Ernährungsplan',
+    text: `Ziel: <b>${g.kcal} kcal · E ${g.protein} · K ${g.carbs} · F ${g.fat}</b><br>vorher ${b.kcal} kcal · E ${b.protein} · K ${b.carbs} · F ${b.fat}<br><br>`
+      + `Deine Mahlzeiten liegen unter „Hinzufügen“ → „Mahlzeiten“:<br>${rows}<br><br>`
+      + 'Jeden Tag: Mittag, 2× Shake (morgens und nach dem Training), abends eine der drei Varianten.',
+    options: [{ label: 'Verstanden', value: 'ok' }],
+    cancel: '',
+  });
+  r.notice = false;
+  save();
+}
+
 function start(session, { adoptLegacy = false } = {}) {
   initStore(session.userId, { adoptLegacy });
   setPersistHook(() => schedulePush());
@@ -160,7 +181,7 @@ function start(session, { adoptLegacy = false } = {}) {
   if (adoptLegacy) toast('Deine bisherigen Daten wurden in den Account übernommen', 3500);
   const adjusted = autoAdjustGoal();
   if (adjusted) toast(`Kalorienziel an deinen Umsatz angepasst: ${adjusted.toLocaleString('de-DE')} kcal`, 3500);
-  repsRepairNotice().then(limbsNotice);
+  repsRepairNotice().then(limbsNotice).then(dietNotice);
 }
 
 const session = currentSession();

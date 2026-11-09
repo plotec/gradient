@@ -205,7 +205,52 @@ function migrate(s) {
     const last = day && [...s.workouts].filter((w) => w.dayId === day.id).sort((a, b) => b.startedAt - a.startedAt)[0];
     s._limbsSync = { at: Date.now(), day: day?.name || null, added: last ? mergeWorkoutIntoDay(day, last) : [], found: !!last, notice: !!day };
   }
+  if (!s._dietPlan1) s._dietPlan1 = applyDietPlan(s);
   return s;
+}
+
+/**
+ * Einmalig: Pauls Diätplan vom 09.11.2026 (2.100 kcal, E 185 / K 225 / F 45).
+ * Greift nur, wenn seine Lebensmittel im Tagebuch stehen – andere Accounts bleiben unberührt.
+ */
+const DIET_GOALS = { kcal: 2100, protein: 185, carbs: 225, fat: 45 };
+const DIET_FOODS = {
+  reis: /basmati/i, huhn: /hähnchenbrust/i, buttergemuese: /buttergemüse/i, whey: /wpc ?80|pure protein/i,
+  mandel: /mandel.*(milch|drink)|(milch|drink).*mandel/i, kaiser: /kaisergemüse/i, knobi: /schwarzerknobi/i, nudeln: /^nudeln/i, gnocchi: /gnocchi/i,
+};
+// Gnocchi aus dem Kühlregal, falls Paul noch keine angelegt hat (Packung einmal scannen, dann gelten ihre Werte)
+const GNOCCHI = { name: 'Gnocchi (Kühlregal)', brand: '', kcal: 154, protein: 3.9, carbs: 33, fat: 0.4, unit: 'g', barcode: '', source: 'eigen', servings: [] };
+const DIET_MEALS = [
+  ['Plan: Mittag', [['reis', 100], ['huhn', 200], ['buttergemuese', 200]]],
+  ['Plan: Shake', [['whey', 30], ['mandel', 300]]],
+  ['Plan: Abend mit Nudeln', [['huhn', 200], ['kaiser', 250], ['knobi', 20], ['nudeln', 160]]],
+  ['Plan: Abend mit Reis', [['huhn', 200], ['kaiser', 250], ['knobi', 20], ['reis', 150]]],
+  ['Plan: Abend mit Gnocchi', [['huhn', 200], ['kaiser', 250], ['knobi', 20], ['gnocchi', 350]]],
+];
+function applyDietPlan(s) {
+  const entries = Object.keys(s.diary).sort().reverse().flatMap((k) => s.diary[k].entries || []);
+  const ids = {};
+  for (const [key, re] of Object.entries(DIET_FOODS)) {
+    const e = entries.find((x) => re.test(x.name));
+    let f = e && s.foods.find((x) => x.id === e.foodId);
+    if (!f && e) {
+      f = { id: uid(), name: e.name, brand: e.brand || '', ...e.per100, unit: e.unit === 'quick' ? 'g' : e.unit, barcode: '', source: 'eigen', servings: [] };
+      s.foods.push(f);
+    }
+    f ||= s.foods.find((x) => re.test(x.name));
+    if (!f && key === 'gnocchi') { f = { id: uid(), ...GNOCCHI }; s.foods.push(f); }
+    if (!f) return { at: Date.now(), applied: false };
+    ids[key] = f.id;
+  }
+  const before = { ...s.settings.goals };
+  s.settings.goals = { ...DIET_GOALS };
+  s.settings.goal.auto = false; // Anpassung macht Claude im Wochenbericht
+  for (const [name, items] of DIET_MEALS) {
+    const meal = { id: uid(), name, items: items.map(([k, amount]) => ({ foodId: ids[k], amount })) };
+    const i = s.meals.findIndex((m) => m.name === name);
+    if (i >= 0) s.meals[i] = { ...meal, id: s.meals[i].id }; else s.meals.push(meal);
+  }
+  return { at: Date.now(), applied: true, before, notice: true };
 }
 
 /** Übungen eines Trainings, die im Trainingstag fehlen, in der Reihenfolge des Trainings ergänzen. */
