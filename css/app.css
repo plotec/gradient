@@ -303,6 +303,12 @@ textarea.input { min-height: 70px; resize: vertical; }
 .sets .chk.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .sets .active-row input { border-color: color-mix(in srgb, var(--train) 50%, var(--line)); }
 .sets > .sr { display: contents; }
+.sets .wu-label { grid-column: 1 / -1; font-size: 10.5px; font-weight: 500; color: var(--amber); text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+.sets .wu .n { color: var(--amber); font-size: 14px; }
+.sets .wu input { height: 34px; font-size: 15px; color: var(--muted); }
+.sets .wu .chk { width: 34px; height: 34px; justify-self: center; }
+.sets .wu .chk.on { background: var(--amber); border-color: var(--amber); }
+.sets .wu-gap { grid-column: 1 / -1; height: 1px; margin: 6px 0; background: var(--line); }
 .ex-actions { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 2px; }
 
 .summary-hero { text-align: center; padding: 18px 10px 6px; display: flex; flex-direction: column; align-items: center; gap: 6px; }

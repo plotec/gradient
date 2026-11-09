@@ -1,15 +1,74 @@
 // Erfolgskästchen: Was war an einem Tag fällig, was wurde geschafft?
 import { state, dayDiary, totals, workoutDayKeys, dayById } from './store.js';
-import { todayKey, daysBetween, addDays } from './utils.js';
+import { todayKey, daysBetween, addDays, dayKey } from './utils.js';
 
-/** Geplanter Slot für ein Datum: Trainingstag-Objekt, 'rest' oder null (kein Rhythmus). */
+// Abfolge statt Kalender: Nur die Reihenfolge zählt. Das letzte Training bestimmt, was als Nächstes
+// dran ist; „Pause“ in der Abfolge heißt: nach dem Training davor so viele Ruhetage.
+let seqCache = null, seqStamp = null;
+/** Je Trainingstag (chronologisch) das Training aus der Abfolge und die Position danach. */
+function seqTimeline() {
+  const slots = state.settings.schedule.slots;
+  const stamp = slots.join() + '|' + state.workouts.length + ':' + (state.workouts[state.workouts.length - 1]?.id || '');
+  if (stamp === seqStamp) return seqCache;
+  const n = slots.length, out = [];
+  let p = 0;
+  for (const w of [...state.workouts].sort((a, b) => a.startedAt - b.startedAt)) {
+    if (!w.dayId) continue; // freies Training verschiebt die Abfolge nicht
+    let j = -1;
+    for (let r = 0; r < n; r++) if (slots[(p + r) % n] === w.dayId) { j = (p + r) % n; break; }
+    if (j < 0) continue; // Trainingstag steht nicht in der Abfolge
+    p = (j + 1) % n;
+    const e = { key: dayKey(new Date(w.startedAt)), day: w.dayId, p };
+    if (out.length && out[out.length - 1].key === e.key) out[out.length - 1] = e; else out.push(e);
+  }
+  seqStamp = stamp; seqCache = out;
+  return out;
+}
+
+/** Ab Position p, gap Tage nach dem letzten Training: Index des fälligen Trainings oder -1 (Pause). */
+function dueAt(p, gap) {
+  const slots = state.settings.schedule.slots, n = slots.length;
+  let r = 0;
+  while (r < n && slots[(p + r) % n] == null) r++;
+  return r === n || gap <= r ? -1 : (p + r) % n;
+}
+
+/** Stand vor einem Tag: letzter Eintrag der Abfolge vor key (oder am Tag selbst). */
+function lastBefore(key, inclusive) {
+  const tl = seqTimeline();
+  for (let i = tl.length - 1; i >= 0; i--) if (inclusive ? tl[i].key <= key : tl[i].key < key) return tl[i];
+  return null;
+}
+
+/** Geplanter Slot für ein Datum: Trainingstag-Objekt, 'rest' oder null (keine Abfolge). */
 export function plannedFor(key) {
-  const { start, slots } = state.settings.schedule;
-  if (!slots.length || !start || key < start) return null;
-  const idx = ((daysBetween(start, key) % slots.length) + slots.length) % slots.length;
-  const id = slots[idx];
-  if (id == null) return 'rest';
-  return dayById(id) || 'rest';
+  const slots = state.settings.schedule.slots;
+  if (!slots.length) return null;
+  const today = todayKey();
+  const dayOf = (i) => (i < 0 ? 'rest' : dayById(slots[i]) || 'rest');
+  if (key <= today) {
+    const last = lastBefore(key, true);
+    if (last?.key === key) return dayById(last.day) || 'rest';
+    if (!last) return key === today ? dayOf(dueAt(0, Infinity)) : null;
+    return dayOf(dueAt(last.p, daysBetween(last.key, key)));
+  }
+  // Zukunft: ab heute durchspielen, als würde jedes fällige Training am Tag gemacht
+  const last = lastBefore(today, true);
+  let p = last?.p ?? 0, lastKey = last?.key ?? null;
+  for (let d = today; d <= key; d = addDays(d, 1)) {
+    if (d === lastKey) continue;
+    const i = dueAt(p, lastKey ? daysBetween(lastKey, d) : Infinity);
+    if (d === key) return dayOf(i);
+    if (i >= 0) { p = (i + 1) % slots.length; lastKey = d; }
+  }
+  return null;
+}
+
+/** Für den Abfolge-Editor: letztes Training aus der Abfolge und Index des nächsten. */
+export function sequenceState() {
+  const slots = state.settings.schedule.slots;
+  const last = lastBefore(todayKey(), true);
+  return { last, next: slots.length ? dueAt(last?.p ?? 0, Infinity) : -1 };
 }
 
 /** Kalorien/Makros im Zielbereich (± Toleranz)? */

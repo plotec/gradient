@@ -3,7 +3,7 @@ import { state, save, exById, dayById, workoutDayKeys, exerciseHistory, bestE10,
 import { uid, esc, fmt, fmtMax, signed, parseNum, e10rm, round, fmtClock, fmtDuration, fmtDay, dayKey, sum, MONTHS, todayKey, addDays, parseKey, daysBetween } from './utils.js';
 import { icon, onAct, onInput, onChange, openSheet, closeSheet, confirmDialog, menuDialog, toast, beep, sheetOpen, topSheet } from './ui.js';
 import { lineChart } from './charts.js';
-import { plannedFor } from './success.js';
+import { plannedFor, sequenceState } from './success.js';
 
 let sub = 'plan';
 let exSearch = '';
@@ -59,7 +59,7 @@ function weekPlan() {
     </span>`;
   }).join('');
   return `<div class="card week-card">
-    <div class="card-head"><h3>Diese Woche</h3><button class="link small" data-act="sched-edit">${sc.slots.length ? 'Rhythmus' : 'Rhythmus festlegen'}</button></div>
+    <div class="card-head"><h3>Diese Woche</h3><button class="link small" data-act="sched-edit">${sc.slots.length ? 'Abfolge' : 'Abfolge festlegen'}</button></div>
     <div class="week">${cells}</div>
   </div>`;
 }
@@ -259,11 +259,12 @@ function openScheduleEditor() {
         const p = plannedFor(k);
         return `<div class="sched-day ${i === 0 ? 'now' : ''} ${p === 'rest' || p == null ? 'rest' : ''}"><span class="wd">${i === 0 ? 'Heute' : `${WD2[parseKey(k).getDay()]} ${parseKey(k).getDate()}.`}</span><span class="nm">${p == null ? '–' : p === 'rest' ? 'Pause' : esc(p.name)}</span></div>`;
       }).join('');
-      const todayIdx = sc.slots.length && sc.start <= todayKey() ? daysBetween(sc.start, todayKey()) % sc.slots.length : -1;
+      const { last, next: todayIdx } = sequenceState();
       return {
-        title: 'Trainingsrhythmus',
+        title: 'Trainingsabfolge',
         body: `
-          <div class="small muted">Die Abfolge wiederholt sich endlos. Beispiel Zweiersplit: Torso, Limbs, Pause. Für feste Wochentage nimm 7 Tage.</div>
+          <div class="small muted">Nur die Reihenfolge zählt, nicht der Wochentag. Die App merkt sich dein letztes Training und zeigt, was als Nächstes dran ist – auch wenn du mal einen Tag schiebst. „Pause“ heißt: nach dem Training davor ein Ruhetag. Beispiel Zweiersplit: Torso, Limbs, Pause.</div>
+          ${last ? `<div class="small">Zuletzt: <b>${esc(slotName(last.day))}</b> (${fmtDay(last.key)})${todayIdx >= 0 ? ` · als Nächstes: <b>${esc(slotName(sc.slots[todayIdx]))}</b>` : ''}</div>` : ''}
           ${days.length ? `<div class="row wrap" style="gap:6px">
             <button class="btn sm" data-act="sched-preset" data-k="all">Alle Tage + Pause</button>
             <button class="btn sm" data-act="sched-preset" data-k="all2">Alle Tage + 2 Pausen</button>
@@ -284,10 +285,7 @@ function openScheduleEditor() {
             <button class="btn" data-act="sched-add" data-k="day" ${days.length ? '' : 'disabled style="opacity:.4"'}>${icon('plus')}Trainingstag</button>
             <button class="btn" data-act="sched-add" data-k="rest">${icon('plus')}Pause</button>
           </div>
-          <label class="field"><span>Tag 1 der Abfolge war am</span><input class="input" type="date" value="${sc.start}" data-ch="sched-start"></label>
-          ${sc.slots.length ? `<button class="btn sm" data-act="sched-today" style="align-self:flex-start">Heute ist Tag …</button>` : ''}
-          ${sc.slots.length ? `<h2 class="sec">Die nächsten 14 Tage</h2><div class="sched-strip wrap">${preview}</div>` : ''}
-          <p class="tiny faint" style="margin:0">Änderungen gelten auch rückwirkend für die Auswertung der Erfolgskästchen.</p>`,
+          ${sc.slots.length ? `<h2 class="sec">Die nächsten 14 Tage, wenn du nach Plan trainierst</h2><div class="sched-strip wrap">${preview}</div>` : ''}`,
       };
     },
   });
@@ -310,17 +308,9 @@ onAct({
   },
   'sched-move': (el) => { const sl = state.settings.schedule.slots, i = +el.dataset.i; [sl[i - 1], sl[i]] = [sl[i], sl[i - 1]]; save(); },
   'sched-del': (el) => { state.settings.schedule.slots.splice(+el.dataset.i, 1); save(); },
-  'sched-today': async (el) => {
-    const sc = state.settings.schedule;
-    const v = await menuDialog({ title: 'Welcher Tag der Abfolge ist heute?', options: sc.slots.map((id, i) => ({ label: `Tag ${i + 1}: ${slotName(id)}`, value: String(i) })) });
-    if (v == null) return;
-    sc.start = addDays(todayKey(), -Number(v));
-    save();
-  },
 });
 onChange({
   'sched-slot': (el) => { state.settings.schedule.slots[+el.dataset.i] = el.value || null; save(); },
-  'sched-start': (el) => { if (el.value) { state.settings.schedule.start = el.value; save(); } },
 });
 
 // =====================================================================
@@ -485,13 +475,20 @@ onAct({ 'ex-edit': (el) => openExerciseEditor(el.dataset.id) });
 const doneCount = (aw) => sum(aw.exercises, (e) => e.sets.filter((s) => s.done).length);
 const totalCount = (aw) => sum(aw.exercises, (e) => e.sets.length);
 
-function buildExercise(exerciseId, setsCount = 3, target = '', rest = null) {
+function buildExercise(exerciseId, setsCount = 3, target = '', rest = null, warmupCount = 0) {
   const last = lastSetsFor(exerciseId);
   const sets = Array.from({ length: setsCount }, (_, j) => {
     const p = last ? last[Math.min(j, last.length - 1)] : null;
     return { weight: p ? p.weight : null, reps: p ? p.reps : null, quality: null, done: false };
   });
-  return { exerciseId, target, rest, sets };
+  // Aufwärmsätze mit den Werten vom letzten Mal vorbelegen
+  const lastWu = [...state.workouts].reverse().find((w) => w.exercises.some((e) => e.exerciseId === exerciseId && e.warmups?.length))
+    ?.exercises.find((e) => e.exerciseId === exerciseId).warmups;
+  const warmups = Array.from({ length: warmupCount }, (_, j) => {
+    const p = lastWu ? lastWu[Math.min(j, lastWu.length - 1)] : null;
+    return { weight: p ? p.weight : null, reps: p ? p.reps : null, done: false };
+  });
+  return { exerciseId, target, rest, sets, warmups };
 }
 
 function startWorkout(dayId) {
@@ -499,7 +496,7 @@ function startWorkout(dayId) {
   state.activeWorkout = {
     id: uid(), dayId: day?.id || null, name: day?.name || 'Freies Training', startedAt: Date.now(),
     current: 0, restEnd: null, restTotal: 0, restBeeped: false,
-    exercises: day ? day.items.filter((i) => exById(i.exerciseId)).map((i) => buildExercise(i.exerciseId, i.sets, i.reps, i.rest)) : [],
+    exercises: day ? day.items.filter((i) => exById(i.exerciseId)).map((i) => buildExercise(i.exerciseId, i.sets, i.reps, i.rest, i.warmups || 0)) : [],
   };
   save();
   openWorkout();
@@ -624,6 +621,15 @@ function exercisePanel(aw, ex, i) {
       </div>` : '<div class="tiny faint">Erstes Mal – trag deine Startwerte ein.</div>'}
     <div class="sets">
       <span class="hd">#</span><span class="hd">kg</span><span class="hd">Wdh</span><span class="hd">10RM</span><span class="hd">Q</span><span class="hd">${icon('check')}</span>
+      ${ex.warmups?.length ? `<span class="wu-label">Aufwärmen · zählt nicht für die Progression</span>
+      ${ex.warmups.map((s, j) => `<div class="sr wu ${s.done ? 'row-done' : ''}">
+        <span class="n">A${j + 1}</span>
+        <input id="ww-${i}-${j}" type="text" inputmode="decimal" enterkeyhint="next" value="${s.weight == null ? '' : String(s.weight).replace('.', ',')}" placeholder="kg" data-in="set-w" data-wu="1" data-i="${i}" data-j="${j}" aria-label="Gewicht Aufwärmsatz ${j + 1}">
+        <input id="wr-${i}-${j}" type="text" inputmode="numeric" enterkeyhint="done" value="${s.reps ?? ''}" placeholder="Wdh" data-in="set-r" data-wu="1" data-i="${i}" data-j="${j}" aria-label="Wiederholungen Aufwärmsatz ${j + 1}">
+        <span></span><span></span>
+        <button class="chk ${s.done ? 'on' : ''}" data-act="wu-check" data-i="${i}" data-j="${j}" aria-label="Aufwärmsatz ${j + 1} abhaken">${icon('check')}</button>
+      </div>`).join('')}
+      <span class="wu-gap"></span>` : ''}
       ${ex.sets.map((s, j) => `<div class="sr ${s.done ? 'row-done' : ''} ${j === firstOpen ? 'active-row' : ''}">
         <span class="n">${j + 1}</span>
         <input id="w-${i}-${j}" type="text" inputmode="decimal" enterkeyhint="next" value="${s.weight == null ? '' : String(s.weight).replace('.', ',')}" placeholder="kg" data-in="set-w" data-i="${i}" data-j="${j}" aria-label="Gewicht Satz ${j + 1}">
@@ -636,6 +642,8 @@ function exercisePanel(aw, ex, i) {
     <div class="ex-actions">
       <button class="btn sm" data-act="set-add" data-i="${i}">${icon('plus')}Satz</button>
       <button class="btn sm" data-act="set-remove" data-i="${i}" ${ex.sets.length <= 1 ? 'disabled style="opacity:.4"' : ''}>${icon('minus')}Satz</button>
+      <button class="btn sm" data-act="wu-add" data-i="${i}">${icon('plus')}Aufwärmen</button>
+      ${ex.warmups?.length ? `<button class="btn sm" data-act="wu-remove" data-i="${i}">${icon('minus')}Aufwärmen</button>` : ''}
       <span class="grow"></span>
       <button class="icon-btn sm" data-act="wo-focus" data-i="${i - 1}" ${i ? '' : 'disabled style="opacity:.3"'} aria-label="Vorherige Übung">${icon('left')}</button>
       <button class="icon-btn sm" data-act="wo-focus" data-i="${i + 1}" ${i < aw.exercises.length - 1 ? '' : 'disabled style="opacity:.3"'} aria-label="Nächste Übung">${icon('right')}</button>
@@ -830,6 +838,22 @@ onAct({
     if (ex.sets.length > 1) ex.sets.pop();
     save();
   },
+  'wu-add': (el) => {
+    const ex = state.activeWorkout.exercises[+el.dataset.i];
+    const prev = (ex.warmups ||= [])[ex.warmups.length - 1];
+    ex.warmups.push({ weight: prev?.weight ?? null, reps: prev?.reps ?? null, done: false });
+    save();
+  },
+  'wu-remove': (el) => {
+    state.activeWorkout.exercises[+el.dataset.i].warmups?.pop();
+    save();
+  },
+  'wu-check': (el) => {
+    const s = state.activeWorkout.exercises[+el.dataset.i].warmups[+el.dataset.j];
+    s.done = !s.done;
+    if (s.done) try { navigator.vibrate?.(30); } catch {}
+    save();
+  },
   'wo-ex-menu': async (el) => {
     const aw = state.activeWorkout;
     const i = +el.dataset.i;
@@ -929,9 +953,10 @@ function updateSet(el, key, val) {
   const aw = state.activeWorkout;
   if (!aw) return;
   const i = +el.dataset.i, j = +el.dataset.j;
-  const s = aw.exercises[i]?.sets[j];
+  const s = aw.exercises[i]?.[el.dataset.wu ? 'warmups' : 'sets']?.[j];
   if (!s) return;
   s[key] = val;
+  if (el.dataset.wu) { save({ silent: true }); return; }
   const rm = document.getElementById(`rm-${i}-${j}`);
   if (rm) rm.innerHTML = rmHtml(s);
   save({ silent: true });
@@ -981,7 +1006,8 @@ async function finishWorkout() {
   if (done === total && !(await confirmDialog({ title: 'Training abschließen?', text: `${done} Sätze in ${fmtClock(Date.now() - aw.startedAt)}.`, ok: 'Abschließen' }))) return;
   const w = {
     id: aw.id, dayId: aw.dayId, name: aw.name, startedAt: aw.startedAt, endedAt: Date.now(),
-    exercises: aw.exercises.map((e) => ({ exerciseId: e.exerciseId, target: e.target, rest: e.rest, note: e.note || '', sets: e.sets.filter((s) => s.done).map(({ weight, reps, quality }) => ({ weight: weight || 0, reps: reps || 0, quality, done: true })) })).filter((e) => e.sets.length),
+    exercises: aw.exercises.map((e) => ({ exerciseId: e.exerciseId, target: e.target, rest: e.rest, note: e.note || '', sets: e.sets.filter((s) => s.done).map(({ weight, reps, quality }) => ({ weight: weight || 0, reps: reps || 0, quality, done: true })),
+      ...(e.warmups?.some((s) => s.done) ? { warmups: e.warmups.filter((s) => s.done).map(({ weight, reps }) => ({ weight: weight || 0, reps: reps || 0 })) } : {}) })).filter((e) => e.sets.length),
   };
   state.workouts.push(w);
   state.activeWorkout = null;
@@ -996,7 +1022,7 @@ async function finishWorkout() {
   })) {
     day.items = aw.exercises.map((e) => {
       const known = day.items.find((it) => it.exerciseId === e.exerciseId) || day.items.find((it) => it.exerciseId === e.replacedFrom);
-      return { exerciseId: e.exerciseId, sets: e.sets.length, reps: known?.reps ?? (e.target || '8–12'), rest: known?.rest ?? e.rest ?? null };
+      return { exerciseId: e.exerciseId, sets: e.sets.length, warmups: e.warmups?.length || 0, reps: known?.reps ?? (e.target || '8–12'), rest: known?.rest ?? e.rest ?? null };
     });
     toast(`„${day.name}“ aktualisiert`);
   }
@@ -1075,6 +1101,7 @@ function planChanges(day, aw) {
     if (item) {
       kept.push(item.exerciseId);
       if (item.sets !== e.sets.length) lines.push(`${name(e.exerciseId)}: ${item.sets} → ${e.sets.length} Sätze`);
+      if ((item.warmups || 0) !== (e.warmups?.length || 0)) lines.push(`${name(e.exerciseId)}: ${item.warmups || 0} → ${e.warmups?.length || 0} Aufwärmsätze`);
     }
   }
   for (const id of planIds) if (!kept.includes(id)) lines.push(`− ${name(id)} entfernt`);

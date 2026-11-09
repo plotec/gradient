@@ -207,6 +207,12 @@ function migrate(s) {
   }
   if (!s._dietPlan1) s._dietPlan1 = applyDietPlan(s);
   if (!s._dietShake2) s._dietShake2 = applyRealShake(s);
+  // Einmalig: Pauls Abfolge Torso, Limbs, Pause (seit v24 zählt nur die Reihenfolge, nicht der Kalender)
+  if (!s._seqOrder1) {
+    const torso = s.workoutDays.find((d) => /^torso/i.test(d.name)), limbs = s.workoutDays.find((d) => /^limbs/i.test(d.name));
+    if (torso && limbs) s.settings.schedule.slots = [torso.id, limbs.id, null];
+    s._seqOrder1 = { at: Date.now(), applied: !!(torso && limbs) };
+  }
   return s;
 }
 
