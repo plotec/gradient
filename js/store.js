@@ -206,6 +206,7 @@ function migrate(s) {
     s._limbsSync = { at: Date.now(), day: day?.name || null, added: last ? mergeWorkoutIntoDay(day, last) : [], found: !!last, notice: !!day };
   }
   if (!s._dietPlan1) s._dietPlan1 = applyDietPlan(s);
+  if (!s._dietShake2) s._dietShake2 = applyRealShake(s);
   return s;
 }
 
@@ -251,6 +252,46 @@ function applyDietPlan(s) {
     if (i >= 0) s.meals[i] = { ...meal, id: s.meals[i].id }; else s.meals.push(meal);
   }
   return { at: Date.now(), applied: true, before, notice: true };
+}
+
+/** Lebensmittel eines Tagebucheintrags; fehlt es in der Liste, wird es aus den Eintragswerten angelegt. */
+function foodOfEntry(s, e) {
+  let f = s.foods.find((x) => x.id === e.foodId);
+  if (!f) {
+    f = { id: uid(), name: e.name, brand: e.brand || '', ...e.per100, unit: e.unit === 'quick' ? 'g' : e.unit, barcode: '', source: 'eigen', servings: [] };
+    s.foods.push(f);
+  }
+  return f;
+}
+
+/**
+ * Plan-Shake auf Pauls echten Shake umstellen: Rühls Bestes + Mandelmilch, so wie er ihn zuletzt eingetragen hat.
+ * Liefert null, solange kein solcher Eintrag existiert – dann wird beim nächsten Start erneut gesucht.
+ */
+function applyRealShake(s) {
+  if (!s._dietPlan1?.applied) return { at: Date.now(), applied: false };
+  for (const k of Object.keys(s.diary).sort().reverse()) {
+    const es = s.diary[k].entries || [];
+    const protein = es.find((x) => /rühl/i.test(`${x.name} ${x.brand}`));
+    if (!protein) continue;
+    const milk = es.find((x) => x.meal === protein.meal && /mandel/i.test(x.name))
+      || es.find((x) => /mandel.*(milch|drink)|(milch|drink).*mandel/i.test(x.name));
+    const items = [protein, milk].filter(Boolean).map((e) => ({ foodId: foodOfEntry(s, e).id, amount: e.amount }));
+    const meal = s.meals.find((m) => m.name === 'Plan: Shake');
+    if (meal) meal.items = items; else s.meals.push({ id: uid(), name: 'Plan: Shake', items });
+    // Abendportion der Kohlenhydratquelle so setzen, dass der Plantag wieder das Kalorienziel trifft
+    const kcalOf = (its) => its.reduce((a, it) => a + ((s.foods.find((f) => f.id === it.foodId)?.kcal || 0) * it.amount) / 100, 0);
+    const mittag = s.meals.find((m) => m.name === 'Plan: Mittag');
+    for (const m of s.meals.filter((x) => x.name.startsWith('Plan: Abend'))) {
+      const carb = m.items[m.items.length - 1];
+      const per = (s.foods.find((f) => f.id === carb.foodId)?.kcal || 0) / 100;
+      if (!mittag || !per) continue;
+      const rest = s.settings.goals.kcal - kcalOf(mittag.items) - 2 * kcalOf(items) - kcalOf(m.items.slice(0, -1));
+      carb.amount = Math.min(carb.amount * 1.5, Math.max(carb.amount * 0.5, Math.round(rest / per / 5) * 5));
+    }
+    return { at: Date.now(), applied: true, day: k, notice: true };
+  }
+  return null;
 }
 
 /** Übungen eines Trainings, die im Trainingstag fehlen, in der Reihenfolge des Trainings ergänzen. */

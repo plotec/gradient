@@ -171,6 +171,32 @@ async function dietNotice() {
   save();
 }
 
+/** Einmalig zeigen, wie der Plan-Shake jetzt aussieht und was das für den Tag heißt. */
+async function shakeNotice() {
+  const r = state._dietShake2;
+  if (!r?.notice) return;
+  const plan = (n) => state.meals.find((m) => m.name === n);
+  const shake = plan('Plan: Shake');
+  const t = mealTotals(shake);
+  const items = shake.items.map((it) => { const f = state.foods.find((x) => x.id === it.foodId); return f ? `${esc(f.name)} ${fmt(it.amount)} ${f.unit}` : ''; }).filter(Boolean).join('<br>');
+  const day = ['Plan: Mittag', 'Plan: Abend mit Nudeln'].map((n) => plan(n)).filter(Boolean).map(mealTotals)
+    .reduce((a, x) => ({ kcal: a.kcal + x.kcal, protein: a.protein + x.protein }), { kcal: 2 * t.kcal, protein: 2 * t.protein });
+  const carbs = state.meals.filter((m) => m.name.startsWith('Plan: Abend')).map((m) => {
+    const it = m.items[m.items.length - 1]; const f = state.foods.find((x) => x.id === it.foodId);
+    return f ? `${esc(f.name)}: ${fmt(it.amount)} ${f.unit}` : '';
+  }).filter(Boolean).join('<br>');
+  await menuDialog({
+    title: 'Plan-Shake aktualisiert',
+    text: `Übernommen aus deinem Eintrag vom ${fmtDay(r.day)}:<br>${items}<br>= <b>${fmt(t.kcal)} kcal · E ${fmt(t.protein)} · K ${fmt(t.carbs)} · F ${fmt(t.fat)}</b><br><br>`
+      + `Abends angepasst, damit der Tag aufgeht:<br>${carbs}<br><br>`
+      + `Tag mit 2 Shakes, Mittag und Abend mit Nudeln: <b>${fmt(day.kcal)} kcal · E ${fmt(day.protein)}</b> (Ziel ${state.settings.goals.kcal} kcal · E ${state.settings.goals.protein})`,
+    options: [{ label: 'OK', value: 'ok' }],
+    cancel: '',
+  });
+  r.notice = false;
+  save();
+}
+
 function start(session, { adoptLegacy = false } = {}) {
   initStore(session.userId, { adoptLegacy });
   setPersistHook(() => schedulePush());
@@ -181,7 +207,7 @@ function start(session, { adoptLegacy = false } = {}) {
   if (adoptLegacy) toast('Deine bisherigen Daten wurden in den Account übernommen', 3500);
   const adjusted = autoAdjustGoal();
   if (adjusted) toast(`Kalorienziel an deinen Umsatz angepasst: ${adjusted.toLocaleString('de-DE')} kcal`, 3500);
-  repsRepairNotice().then(limbsNotice).then(dietNotice);
+  repsRepairNotice().then(limbsNotice).then(dietNotice).then(shakeNotice);
 }
 
 const session = currentSession();
