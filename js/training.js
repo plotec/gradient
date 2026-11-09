@@ -1,5 +1,5 @@
 // Bereich Training: Trainingstage, Übungen, laufendes Training, Zusammenfassung, Verlauf.
-import { state, save, exById, dayById, workoutDayKeys, mergeWorkoutIntoDay, exerciseHistory, bestE10, lastSetsFor, lastSessionFor, sessionStrength, setVolume } from './store.js';
+import { state, save, exById, dayById, workoutDayKeys, exerciseHistory, bestE10, lastSetsFor, lastSessionFor, sessionStrength, setVolume } from './store.js';
 import { uid, esc, fmt, fmtMax, signed, parseNum, e10rm, round, fmtClock, fmtDuration, fmtDay, dayKey, sum, MONTHS, todayKey, addDays, parseKey, daysBetween } from './utils.js';
 import { icon, onAct, onInput, onChange, openSheet, closeSheet, confirmDialog, menuDialog, toast, beep, sheetOpen, topSheet } from './ui.js';
 import { lineChart } from './charts.js';
@@ -856,7 +856,7 @@ onAct({
     if (v === 'swap') {
       openExercisePicker({ onPick: (id) => {
         const old = aw.exercises[i];
-        aw.exercises[i] = { ...buildExercise(id, old.sets.length, old.target, old.rest), note: old.note || '' };
+        aw.exercises[i] = { ...buildExercise(id, old.sets.length, old.target, old.rest), note: old.note || '', replacedFrom: old.replacedFrom ?? old.exerciseId };
         save();
       } });
     }
@@ -865,7 +865,7 @@ onAct({
     const aw = state.activeWorkout;
     openExercisePicker({ multi: true, onPick: (ids) => {
       const first = aw.exercises.length;
-      ids.forEach((id) => aw.exercises.push({ ...buildExercise(id, 3), added: true }));
+      ids.forEach((id) => aw.exercises.push(buildExercise(id, 3)));
       if (ids.length && (aw.exercises[aw.current]?.sets.every((s) => s.done) ?? true)) aw.current = first;
       save();
     } });
@@ -984,13 +984,22 @@ async function finishWorkout() {
     exercises: aw.exercises.map((e) => ({ exerciseId: e.exerciseId, target: e.target, rest: e.rest, note: e.note || '', sets: e.sets.filter((s) => s.done).map(({ weight, reps, quality }) => ({ weight: weight || 0, reps: reps || 0, quality, done: true })) })).filter((e) => e.sets.length),
   };
   state.workouts.push(w);
-  // Im Training hinzugefügte Übungen gehören ab jetzt fest zu diesem Trainingstag
-  const day = aw.dayId ? dayById(aw.dayId) : null;
-  if (day && aw.exercises.some((e) => e.added)) {
-    mergeWorkoutIntoDay(day, { exercises: aw.exercises.filter((e) => e.added || day.items.some((i) => i.exerciseId === e.exerciseId)) });
-  }
   state.activeWorkout = null;
   closeSheet();
+  // Was im Training am Plan geändert wurde, auf Wunsch für alle folgenden Trainings übernehmen
+  const day = aw.dayId ? dayById(aw.dayId) : null;
+  const diff = day ? planChanges(day, aw) : [];
+  if (diff.length && await confirmDialog({
+    title: `Änderungen in „${day.name}“ übernehmen?`,
+    text: `${diff.join('<br>')}<br><br>Übernehmen gilt für alle folgenden Trainings.`,
+    ok: 'Übernehmen', cancel: 'Nur heute',
+  })) {
+    day.items = aw.exercises.map((e) => {
+      const known = day.items.find((it) => it.exerciseId === e.exerciseId) || day.items.find((it) => it.exerciseId === e.replacedFrom);
+      return { exerciseId: e.exerciseId, sets: e.sets.length, reps: known?.reps ?? (e.target || '8–12'), rest: known?.rest ?? e.rest ?? null };
+    });
+    toast(`„${day.name}“ aktualisiert`);
+  }
   save();
   openSummary(w.id, true);
 }
@@ -1049,6 +1058,29 @@ function countStars(root, n) {
     else { badge.classList.add('hit'); try { navigator.vibrate?.([30, 50, 60]); } catch {} }
   };
   requestAnimationFrame(tick);
+}
+
+/** Unterschiede zwischen Trainingstag und dem gerade beendeten Training, als lesbare Zeilen. */
+function planChanges(day, aw) {
+  const name = (id) => esc(exById(id)?.name || 'Übung');
+  const planIds = day.items.map((it) => it.exerciseId);
+  const lines = [];
+  const kept = []; // Plan-Übung in Trainingsreihenfolge (getauschte unter ihrer alten Kennung)
+  for (const e of aw.exercises) {
+    const inPlan = planIds.includes(e.exerciseId);
+    const swappedFrom = !inPlan && e.replacedFrom && planIds.includes(e.replacedFrom) ? e.replacedFrom : null;
+    const item = day.items.find((it) => it.exerciseId === (inPlan ? e.exerciseId : swappedFrom));
+    if (swappedFrom) lines.push(`↔ ${name(swappedFrom)} → ${name(e.exerciseId)}`);
+    else if (!inPlan) lines.push(`+ ${name(e.exerciseId)} (${e.sets.length} Sätze)`);
+    if (item) {
+      kept.push(item.exerciseId);
+      if (item.sets !== e.sets.length) lines.push(`${name(e.exerciseId)}: ${item.sets} → ${e.sets.length} Sätze`);
+    }
+  }
+  for (const id of planIds) if (!kept.includes(id)) lines.push(`− ${name(id)} entfernt`);
+  const planOrder = planIds.filter((id) => kept.includes(id));
+  if (planOrder.join() !== kept.join()) lines.push('Reihenfolge geändert');
+  return lines;
 }
 
 /** Vergleicht ein Training mit allen Trainings davor. */
