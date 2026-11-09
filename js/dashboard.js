@@ -5,6 +5,7 @@ import { icon, onAct, onChange, openSheet, closeSheet, topSheet, redrawSheet, co
 import { lineChart, barChart } from './charts.js';
 import { goalNumbers, goalLabel, targetIntake, openGoalSheet } from './goals.js';
 import { workoutStars } from './training.js';
+import './report.js';
 import { dayStatus, rate, yearStatuses, supplementHabits, otherHabits, plannedFor } from './success.js';
 import { currentSession, logout, changePassword, cloudEnabled, getSyncStatus, onSyncStatus, AuthError } from './cloud.js';
 import { loadBls, blsCount, importBlsFile, BLS_CREDIT } from './foods-db.js';
@@ -179,7 +180,9 @@ export function renderDashboard() {
       </div>
     </div>
 
-    ${strengthCard(P, keys[0])}`;
+    ${strengthCard(P, keys[0])}
+
+    <button class="btn block lg" data-act="report-copy">${icon('copy')}Wochenbericht für Claude kopieren</button>`;
 }
 
 const FLAME = `<svg viewBox="0 0 48 56" aria-hidden="true"><defs><linearGradient id="fl-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff7a2f"/><stop offset="1" stop-color="#ff3d0e"/></linearGradient></defs><path d="M24 2c2 8 14 15 14 30 0 12-7 22-14 22S6 44 6 32c0-7 3-12 7-16 0 5 2 8 5 9 0-9 2-16 6-23z" fill="url(#fl-g)"/><path d="M24 34c1 3 6 6 6 12 0 4-3 8-6 8s-6-4-6-8c0-5 5-8 6-12z" fill="#fff"/></svg>`;
